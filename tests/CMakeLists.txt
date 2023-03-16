@@ -60,3 +60,18 @@ target_include_directories(s21_to_matter_translator_tests PRIVATE
 
 target_link_libraries(s21_to_matter_translator_tests PRIVATE Catch2::Catch2WithMain)
 catch_discover_tests(s21_to_matter_translator_tests)
+
+add_executable(matter_to_s21_translator_tests
+    matter_to_s21_translator/test_matter_to_s21_translator.cpp
+    ${SRC_DIR}/matter_to_s21_translator.cpp
+)
+
+target_include_directories(matter_to_s21_translator_tests PRIVATE
+    ${SRC_DIR}                                                        # matter_to_s21_translator.h, s21_to_matter_translator.h
+    ${SRC_DIR}/s21                                                    # s21_presentation.h (for OperatingMode, FanMode)
+    ${CMAKE_SOURCE_DIR}/matter_to_s21_translator/chip_stubs           # stub chip::app::Clusters::Thermostat enums
+    ${CMAKE_SOURCE_DIR}/../third_party                                # tl/expected.hpp
+)
+
+target_link_libraries(matter_to_s21_translator_tests PRIVATE Catch2::Catch2WithMain)
+catch_discover_tests(matter_to_s21_translator_tests)

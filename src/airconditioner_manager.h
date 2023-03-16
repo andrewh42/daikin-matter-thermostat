@@ -6,6 +6,7 @@
 #pragma once
 
 #include "s21/s21_manager.h"
+#include "matter_to_s21_translator.h"
 #include "s21_to_matter_translator.h"
 
 #include <stdbool.h>
@@ -76,26 +77,11 @@ class AirConditionerManager {
     void ExecutePendingCommands();
     static const char* GetSystemModeStr(app::Clusters::Thermostat::SystemModeEnum mode);
     static const char* GetRunningModeStr(app::Clusters::Thermostat::ThermostatRunningModeEnum mode);
-    static OperatingMode SystemModeToOperatingMode(Clusters::Thermostat::SystemModeEnum mode);
-    static std::optional<FanMode> SpeedSettingToS21FanMode(uint8_t rawValue);
+
 
     // Thread safety model:
     //
     // mPendingCommandFlags is std::atomic and accessed from both threads via fetch_or/exchange.
-    //
-    // All other mutable state (mOnOff, mSystemMode, mCoolingCelsiusSetPoint, mHeatingCelsiusSetPoint,
-    // mFanMode) is accessed from two threads:
-    //   - Matter callback thread: writes in AttributeChangeHandler and sub-handlers
-    //   - S21 work queue thread: reads in ExecutePendingCommands
-    //
-    // On ARM Cortex-M, naturally-aligned loads/stores of ≤ 4 bytes are hardware-atomic
-    // (single bus transaction). These members are all ≤ 4 bytes and struct alignment guarantees
-    // natural alignment. The compiler cannot cache member reads across opaque function calls
-    // (k_work_submit_to_queue, S21Manager methods), so stale values are not a concern.
-    //
-    // This is technically a data race under the C++ memory model, but is a deliberate choice
-    // to avoid the overhead of atomics or mutexes on this specific platform.
-    //
     // mUpdatingFromPoll is set on the Matter thread only (PostTask lambda); no concurrent access.
     std::atomic<uint32_t> mPendingCommandFlags{0};
 
@@ -104,11 +90,10 @@ class AirConditionerManager {
     };
 
     int  mInitRetryIntervalMs{kS21InitRetryInitialIntervalMilliSec};
-    bool mOnOff{false};
-    int16_t mCoolingSetPointCelsius{0};
-    int16_t mHeatingSetPointCelsius{0};
-    Clusters::Thermostat::SystemModeEnum mSystemMode{Clusters::Thermostat::SystemModeEnum::kAuto};
-    FanMode mFanMode{FanMode::Auto};
+
+    // Last command sent to S21; used for no-change deduplication in ExecutePendingCommands().
+    // Accessed only from the S21 work queue thread.
+    std::optional<S21OperationCommand> mLastSentCommand;
 
     // Set true while a poll-driven translate() call is in progress to suppress spurious
     // command queuing from ZCL attribute-change callbacks. Accessed only on the Matter thread.
@@ -120,5 +105,5 @@ class AirConditionerManager {
     void TemperatureAttributeChangeHandler(AttributeId attributeId, uint8_t* value, uint16_t size);
     void FanControlAttributeChangeHandler(AttributeId attributeId, uint8_t* value, uint16_t size);
     CHIP_ERROR InitLed();
-    void UpdatePowerIndicator();
+    void UpdatePowerIndicator(bool onOff);
 };
