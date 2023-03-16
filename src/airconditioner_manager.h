@@ -65,11 +65,12 @@ class AirConditionerManager {
     struct k_work_q         mS21WorkQueue;
     struct k_work_delayable mPollWork;
     struct k_work_delayable mInitRetryWork;
-    struct k_work           mCommandWork;
+    struct k_work_delayable mCommandWork;
 
     static constexpr int kS21PollIntervalSec                  = 15; // poll frequently to stress-test the UART code
     static constexpr int kS21InitRetryInitialIntervalMilliSec = 500;
     static constexpr int kS21InitRetryMaximumIntervalMilliSec = 60'000;
+    static constexpr int kCommandDebounceMs                   = 50;
     static void PollWorkHandler(k_work* work);
     static void InitRetryWorkHandler(k_work* work);
     static void CommandWorkHandler(k_work* work);

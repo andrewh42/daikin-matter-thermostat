@@ -131,7 +131,7 @@ CHIP_ERROR AirConditionerManager::Init(S21Manager& s21Manager)
                    K_PRIO_PREEMPT(5), NULL);
     k_work_init_delayable(&mPollWork, PollWorkHandler);
     k_work_init_delayable(&mInitRetryWork, InitRetryWorkHandler);
-    k_work_init(&mCommandWork, CommandWorkHandler);
+    k_work_init_delayable(&mCommandWork, CommandWorkHandler);
 
     if (mS21Manager->Init() == 0) {
         k_work_reschedule_for_queue(&mS21WorkQueue, &mPollWork, K_NO_WAIT);
@@ -442,7 +442,7 @@ void AirConditionerManager::OnOffAttributeChangeHandler(AttributeId attributeId,
     if (mUpdatingFromPoll) return;
     LOG_INF("Cluster OnOff: attribute OnOff set to %s", newOnOff ? "ON" : "OFF");
     mPendingCommandFlags.fetch_or(kCommandOperation);
-    k_work_submit_to_queue(&mS21WorkQueue, &mCommandWork);
+    k_work_reschedule_for_queue(&mS21WorkQueue, &mCommandWork, K_MSEC(kCommandDebounceMs));
 }
 
 void AirConditionerManager::TemperatureAttributeChangeHandler(AttributeId attributeId, uint8_t* value, uint16_t size)
@@ -461,7 +461,7 @@ void AirConditionerManager::TemperatureAttributeChangeHandler(AttributeId attrib
             if (currentMode == app::Clusters::Thermostat::SystemModeEnum::kCool ||
                 currentMode == app::Clusters::Thermostat::SystemModeEnum::kAuto) {
                 mPendingCommandFlags.fetch_or(kCommandOperation);
-                k_work_submit_to_queue(&mS21WorkQueue, &mCommandWork);
+                k_work_reschedule_for_queue(&mS21WorkQueue, &mCommandWork, K_MSEC(kCommandDebounceMs));
             }
         }
     } break;
@@ -475,7 +475,7 @@ void AirConditionerManager::TemperatureAttributeChangeHandler(AttributeId attrib
             if (currentMode == app::Clusters::Thermostat::SystemModeEnum::kHeat ||
                 currentMode == app::Clusters::Thermostat::SystemModeEnum::kAuto) {
                 mPendingCommandFlags.fetch_or(kCommandOperation);
-                k_work_submit_to_queue(&mS21WorkQueue, &mCommandWork);
+                k_work_reschedule_for_queue(&mS21WorkQueue, &mCommandWork, K_MSEC(kCommandDebounceMs));
             }
         }
     } break;
@@ -486,7 +486,7 @@ void AirConditionerManager::TemperatureAttributeChangeHandler(AttributeId attrib
             LOG_INF("System Mode changed -> %s", GetSystemModeStr(systemMode));
             if (systemMode != app::Clusters::Thermostat::SystemModeEnum::kOff) {
                 mPendingCommandFlags.fetch_or(kCommandOperation);
-                k_work_submit_to_queue(&mS21WorkQueue, &mCommandWork);
+                k_work_reschedule_for_queue(&mS21WorkQueue, &mCommandWork, K_MSEC(kCommandDebounceMs));
             }
         }
     } break;
@@ -514,7 +514,7 @@ void AirConditionerManager::FanControlAttributeChangeHandler(AttributeId attribu
         if (!mUpdatingFromPoll) {
             LOG_DBG("SpeedSetting changed -> %u", *value);
             mPendingCommandFlags.fetch_or(kCommandOperation);
-            k_work_submit_to_queue(&mS21WorkQueue, &mCommandWork);
+            k_work_reschedule_for_queue(&mS21WorkQueue, &mCommandWork, K_MSEC(kCommandDebounceMs));
         }
         break;
     }
@@ -524,7 +524,7 @@ void AirConditionerManager::FanControlAttributeChangeHandler(AttributeId attribu
             // SpeedSetting may already be null (no SpeedSetting callback will fire), so queue here.
             LOG_DBG("FanMode -> Auto");
             mPendingCommandFlags.fetch_or(kCommandOperation);
-            k_work_submit_to_queue(&mS21WorkQueue, &mCommandWork);
+            k_work_reschedule_for_queue(&mS21WorkQueue, &mCommandWork, K_MSEC(kCommandDebounceMs));
         }
         break;
     }
@@ -536,7 +536,8 @@ void AirConditionerManager::FanControlAttributeChangeHandler(AttributeId attribu
 
 void AirConditionerManager::CommandWorkHandler(k_work* work)
 {
-    auto& self = *CONTAINER_OF(work, AirConditionerManager, mCommandWork);
+    auto* dwork = k_work_delayable_from_work(work);
+    auto& self  = *CONTAINER_OF(dwork, AirConditionerManager, mCommandWork);
     self.ExecutePendingCommands();
 }
 
