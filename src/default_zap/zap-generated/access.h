@@ -76,7 +76,6 @@
 
 // Parallel array data (*cluster*, attribute, privilege) for write attribute
 #define GENERATED_ACCESS_WRITE_ATTRIBUTE__CLUSTER { \
-    0x0000001E, /* Cluster: Binding, Attribute: Binding, Privilege: manage */ \
     0x0000001F, /* Cluster: Access Control, Attribute: ACL, Privilege: administer */ \
     0x0000001F, /* Cluster: Access Control, Attribute: Extension, Privilege: administer */ \
     0x00000028, /* Cluster: Basic Information, Attribute: NodeLabel, Privilege: manage */ \
@@ -85,6 +84,7 @@
     0x00000030, /* Cluster: General Commissioning, Attribute: Breadcrumb, Privilege: administer */ \
     0x00000031, /* Cluster: Network Commissioning, Attribute: InterfaceEnabled, Privilege: administer */ \
     0x0000003F, /* Cluster: Group Key Management, Attribute: GroupKeyMap, Privilege: manage */ \
+    0x00000201, /* Cluster: Thermostat, Attribute: HVACSystemTypeConfiguration, Privilege: manage */ \
     0x00000201, /* Cluster: Thermostat, Attribute: MinHeatSetpointLimit, Privilege: manage */ \
     0x00000201, /* Cluster: Thermostat, Attribute: MaxHeatSetpointLimit, Privilege: manage */ \
     0x00000201, /* Cluster: Thermostat, Attribute: MinCoolSetpointLimit, Privilege: manage */ \
@@ -92,11 +92,11 @@
     0x00000201, /* Cluster: Thermostat, Attribute: MinSetpointDeadBand, Privilege: manage */ \
     0x00000201, /* Cluster: Thermostat, Attribute: ControlSequenceOfOperation, Privilege: manage */ \
     0x00000201, /* Cluster: Thermostat, Attribute: SystemMode, Privilege: manage */ \
+    0x00000201, /* Cluster: Thermostat, Attribute: ACType, Privilege: manage */ \
 }
 
 // Parallel array data (cluster, *attribute*, privilege) for write attribute
 #define GENERATED_ACCESS_WRITE_ATTRIBUTE__ATTRIBUTE { \
-    0x00000000, /* Cluster: Binding, Attribute: Binding, Privilege: manage */ \
     0x00000000, /* Cluster: Access Control, Attribute: ACL, Privilege: administer */ \
     0x00000001, /* Cluster: Access Control, Attribute: Extension, Privilege: administer */ \
     0x00000005, /* Cluster: Basic Information, Attribute: NodeLabel, Privilege: manage */ \
@@ -105,6 +105,7 @@
     0x00000000, /* Cluster: General Commissioning, Attribute: Breadcrumb, Privilege: administer */ \
     0x00000004, /* Cluster: Network Commissioning, Attribute: InterfaceEnabled, Privilege: administer */ \
     0x00000000, /* Cluster: Group Key Management, Attribute: GroupKeyMap, Privilege: manage */ \
+    0x00000009, /* Cluster: Thermostat, Attribute: HVACSystemTypeConfiguration, Privilege: manage */ \
     0x00000015, /* Cluster: Thermostat, Attribute: MinHeatSetpointLimit, Privilege: manage */ \
     0x00000016, /* Cluster: Thermostat, Attribute: MaxHeatSetpointLimit, Privilege: manage */ \
     0x00000017, /* Cluster: Thermostat, Attribute: MinCoolSetpointLimit, Privilege: manage */ \
@@ -112,11 +113,11 @@
     0x00000019, /* Cluster: Thermostat, Attribute: MinSetpointDeadBand, Privilege: manage */ \
     0x0000001B, /* Cluster: Thermostat, Attribute: ControlSequenceOfOperation, Privilege: manage */ \
     0x0000001C, /* Cluster: Thermostat, Attribute: SystemMode, Privilege: manage */ \
+    0x00000040, /* Cluster: Thermostat, Attribute: ACType, Privilege: manage */ \
 }
 
 // Parallel array data (cluster, attribute, *privilege*) for write attribute
 #define GENERATED_ACCESS_WRITE_ATTRIBUTE__PRIVILEGE { \
-    chip::Access::Privilege::kManage, /* Cluster: Binding, Attribute: Binding, Privilege: manage */ \
     chip::Access::Privilege::kAdminister, /* Cluster: Access Control, Attribute: ACL, Privilege: administer */ \
     chip::Access::Privilege::kAdminister, /* Cluster: Access Control, Attribute: Extension, Privilege: administer */ \
     chip::Access::Privilege::kManage, /* Cluster: Basic Information, Attribute: NodeLabel, Privilege: manage */ \
@@ -125,6 +126,7 @@
     chip::Access::Privilege::kAdminister, /* Cluster: General Commissioning, Attribute: Breadcrumb, Privilege: administer */ \
     chip::Access::Privilege::kAdminister, /* Cluster: Network Commissioning, Attribute: InterfaceEnabled, Privilege: administer */ \
     chip::Access::Privilege::kManage, /* Cluster: Group Key Management, Attribute: GroupKeyMap, Privilege: manage */ \
+    chip::Access::Privilege::kManage, /* Cluster: Thermostat, Attribute: HVACSystemTypeConfiguration, Privilege: manage */ \
     chip::Access::Privilege::kManage, /* Cluster: Thermostat, Attribute: MinHeatSetpointLimit, Privilege: manage */ \
     chip::Access::Privilege::kManage, /* Cluster: Thermostat, Attribute: MaxHeatSetpointLimit, Privilege: manage */ \
     chip::Access::Privilege::kManage, /* Cluster: Thermostat, Attribute: MinCoolSetpointLimit, Privilege: manage */ \
@@ -132,6 +134,7 @@
     chip::Access::Privilege::kManage, /* Cluster: Thermostat, Attribute: MinSetpointDeadBand, Privilege: manage */ \
     chip::Access::Privilege::kManage, /* Cluster: Thermostat, Attribute: ControlSequenceOfOperation, Privilege: manage */ \
     chip::Access::Privilege::kManage, /* Cluster: Thermostat, Attribute: SystemMode, Privilege: manage */ \
+    chip::Access::Privilege::kManage, /* Cluster: Thermostat, Attribute: ACType, Privilege: manage */ \
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -139,10 +142,6 @@
 // Parallel array data (*cluster*, command, privilege) for invoke command
 #define GENERATED_ACCESS_INVOKE_COMMAND__CLUSTER { \
     0x00000003, /* Cluster: Identify, Command: Identify, Privilege: manage */ \
-    0x00000004, /* Cluster: Groups, Command: AddGroup, Privilege: manage */ \
-    0x00000004, /* Cluster: Groups, Command: RemoveGroup, Privilege: manage */ \
-    0x00000004, /* Cluster: Groups, Command: RemoveAllGroups, Privilege: manage */ \
-    0x00000004, /* Cluster: Groups, Command: AddGroupIfIdentifying, Privilege: manage */ \
     0x0000002A, /* Cluster: OTA Software Update Requestor, Command: AnnounceOTAProvider, Privilege: administer */ \
     0x00000030, /* Cluster: General Commissioning, Command: ArmFailSafe, Privilege: administer */ \
     0x00000030, /* Cluster: General Commissioning, Command: SetRegulatoryConfig, Privilege: administer */ \
@@ -177,10 +176,6 @@
 // Parallel array data (cluster, *command*, privilege) for invoke command
 #define GENERATED_ACCESS_INVOKE_COMMAND__COMMAND { \
     0x00000000, /* Cluster: Identify, Command: Identify, Privilege: manage */ \
-    0x00000000, /* Cluster: Groups, Command: AddGroup, Privilege: manage */ \
-    0x00000003, /* Cluster: Groups, Command: RemoveGroup, Privilege: manage */ \
-    0x00000004, /* Cluster: Groups, Command: RemoveAllGroups, Privilege: manage */ \
-    0x00000005, /* Cluster: Groups, Command: AddGroupIfIdentifying, Privilege: manage */ \
     0x00000000, /* Cluster: OTA Software Update Requestor, Command: AnnounceOTAProvider, Privilege: administer */ \
     0x00000000, /* Cluster: General Commissioning, Command: ArmFailSafe, Privilege: administer */ \
     0x00000002, /* Cluster: General Commissioning, Command: SetRegulatoryConfig, Privilege: administer */ \
@@ -215,10 +210,6 @@
 // Parallel array data (cluster, command, *privilege*) for invoke command
 #define GENERATED_ACCESS_INVOKE_COMMAND__PRIVILEGE { \
     chip::Access::Privilege::kManage, /* Cluster: Identify, Command: Identify, Privilege: manage */ \
-    chip::Access::Privilege::kManage, /* Cluster: Groups, Command: AddGroup, Privilege: manage */ \
-    chip::Access::Privilege::kManage, /* Cluster: Groups, Command: RemoveGroup, Privilege: manage */ \
-    chip::Access::Privilege::kManage, /* Cluster: Groups, Command: RemoveAllGroups, Privilege: manage */ \
-    chip::Access::Privilege::kManage, /* Cluster: Groups, Command: AddGroupIfIdentifying, Privilege: manage */ \
     chip::Access::Privilege::kAdminister, /* Cluster: OTA Software Update Requestor, Command: AnnounceOTAProvider, Privilege: administer */ \
     chip::Access::Privilege::kAdminister, /* Cluster: General Commissioning, Command: ArmFailSafe, Privilege: administer */ \
     chip::Access::Privilege::kAdminister, /* Cluster: General Commissioning, Command: SetRegulatoryConfig, Privilege: administer */ \

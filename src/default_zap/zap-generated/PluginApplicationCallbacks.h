@@ -20,9 +20,8 @@
 #pragma once
 
 void MatterIdentifyPluginServerInitCallback();
-void MatterGroupsPluginServerInitCallback();
+void MatterOnOffPluginServerInitCallback();
 void MatterDescriptorPluginServerInitCallback();
-void MatterBindingPluginServerInitCallback();
 void MatterAccessControlPluginServerInitCallback();
 void MatterBasicInformationPluginServerInitCallback();
 void MatterOtaSoftwareUpdateRequestorPluginServerInitCallback();
@@ -37,23 +36,24 @@ void MatterAdministratorCommissioningPluginServerInitCallback();
 void MatterOperationalCredentialsPluginServerInitCallback();
 void MatterGroupKeyManagementPluginServerInitCallback();
 void MatterThermostatPluginServerInitCallback();
+void MatterFanControlPluginServerInitCallback();
 
-#define MATTER_PLUGINS_INIT                                                                                            \
-	MatterIdentifyPluginServerInitCallback();                                                                      \
-	MatterGroupsPluginServerInitCallback();                                                                        \
-	MatterDescriptorPluginServerInitCallback();                                                                    \
-	MatterBindingPluginServerInitCallback();                                                                       \
-	MatterAccessControlPluginServerInitCallback();                                                                 \
-	MatterBasicInformationPluginServerInitCallback();                                                              \
-	MatterOtaSoftwareUpdateRequestorPluginServerInitCallback();                                                    \
-	MatterGeneralCommissioningPluginServerInitCallback();                                                          \
-	MatterNetworkCommissioningPluginServerInitCallback();                                                          \
-	MatterDiagnosticLogsPluginServerInitCallback();                                                                \
-	MatterGeneralDiagnosticsPluginServerInitCallback();                                                            \
-	MatterSoftwareDiagnosticsPluginServerInitCallback();                                                           \
-	MatterThreadNetworkDiagnosticsPluginServerInitCallback();                                                      \
-	MatterWiFiNetworkDiagnosticsPluginServerInitCallback();                                                        \
-	MatterAdministratorCommissioningPluginServerInitCallback();                                                    \
-	MatterOperationalCredentialsPluginServerInitCallback();                                                        \
-	MatterGroupKeyManagementPluginServerInitCallback();                                                            \
-	MatterThermostatPluginServerInitCallback();
+#define MATTER_PLUGINS_INIT                                                    \
+  MatterIdentifyPluginServerInitCallback();                                    \
+  MatterOnOffPluginServerInitCallback();                                       \
+  MatterDescriptorPluginServerInitCallback();                                  \
+  MatterAccessControlPluginServerInitCallback();                               \
+  MatterBasicInformationPluginServerInitCallback();                            \
+  MatterOtaSoftwareUpdateRequestorPluginServerInitCallback();                  \
+  MatterGeneralCommissioningPluginServerInitCallback();                        \
+  MatterNetworkCommissioningPluginServerInitCallback();                        \
+  MatterDiagnosticLogsPluginServerInitCallback();                              \
+  MatterGeneralDiagnosticsPluginServerInitCallback();                          \
+  MatterSoftwareDiagnosticsPluginServerInitCallback();                         \
+  MatterThreadNetworkDiagnosticsPluginServerInitCallback();                    \
+  MatterWiFiNetworkDiagnosticsPluginServerInitCallback();                      \
+  MatterAdministratorCommissioningPluginServerInitCallback();                  \
+  MatterOperationalCredentialsPluginServerInitCallback();                      \
+  MatterGroupKeyManagementPluginServerInitCallback();                          \
+  MatterThermostatPluginServerInitCallback();                                  \
+  MatterFanControlPluginServerInitCallback();

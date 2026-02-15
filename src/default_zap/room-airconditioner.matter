@@ -404,129 +404,75 @@ cluster Identify = 3 {
   command access(invoke: manage) TriggerEffect(TriggerEffectRequest): DefaultSuccess = 64;
 }
 
-/** Attributes and commands for putting a device into Identification mode (e.g. flashing a light). */
-cluster Identify = 3 {
+/** Attributes and commands for switching devices between 'On' and 'Off' states. */
+cluster OnOff = 6 {
   revision 6;
 
+  enum DelayedAllOffEffectVariantEnum : enum8 {
+    kDelayedOffFastFade = 0;
+    kNoFade = 1;
+    kDelayedOffSlowFade = 2;
+  }
+
+  enum DyingLightEffectVariantEnum : enum8 {
+    kDyingLightFadeOff = 0;
+  }
+
   enum EffectIdentifierEnum : enum8 {
-    kBlink = 0;
-    kBreathe = 1;
-    kOkay = 2;
-    kChannelChange = 11;
-    kFinishEffect = 254;
-    kStopEffect = 255;
+    kDelayedAllOff = 0;
+    kDyingLight = 1;
   }
 
-  enum EffectVariantEnum : enum8 {
-    kDefault = 0;
+  enum StartUpOnOffEnum : enum8 {
+    kOff = 0;
+    kOn = 1;
+    kToggle = 2;
   }
-
-  enum IdentifyTypeEnum : enum8 {
-    kNone = 0;
-    kLightOutput = 1;
-    kVisibleIndicator = 2;
-    kAudibleBeep = 3;
-    kDisplay = 4;
-    kActuator = 5;
-  }
-
-  attribute int16u identifyTime = 0;
-  readonly attribute IdentifyTypeEnum identifyType = 1;
-  readonly attribute command_id generatedCommandList[] = 65528;
-  readonly attribute command_id acceptedCommandList[] = 65529;
-  readonly attribute attrib_id attributeList[] = 65531;
-  readonly attribute bitmap32 featureMap = 65532;
-  readonly attribute int16u clusterRevision = 65533;
-
-  request struct IdentifyRequest {
-    int16u identifyTime = 0;
-  }
-
-  request struct TriggerEffectRequest {
-    EffectIdentifierEnum effectIdentifier = 0;
-    EffectVariantEnum effectVariant = 1;
-  }
-
-  /** This command starts or stops the receiving device identifying itself. */
-  command access(invoke: manage) Identify(IdentifyRequest): DefaultSuccess = 0;
-  /** This command allows the support of feedback to the user, such as a certain light effect. */
-  command access(invoke: manage) TriggerEffect(TriggerEffectRequest): DefaultSuccess = 64;
-}
-
-/** Attributes and commands for group configuration and manipulation. */
-cluster Groups = 4 {
-  revision 4;
 
   bitmap Feature : bitmap32 {
-    kGroupNames = 0x1;
+    kLighting = 0x1;
+    kDeadFrontBehavior = 0x2;
+    kOffOnly = 0x4;
   }
 
-  bitmap NameSupportBitmap : bitmap8 {
-    kGroupNames = 0x80;
+  bitmap OnOffControlBitmap : bitmap8 {
+    kAcceptOnlyWhenOn = 0x1;
   }
 
-  readonly attribute NameSupportBitmap nameSupport = 0;
+  readonly attribute boolean onOff = 0;
+  readonly attribute optional boolean globalSceneControl = 16384;
+  attribute optional int16u onTime = 16385;
+  attribute optional int16u offWaitTime = 16386;
+  attribute access(write: manage) optional nullable StartUpOnOffEnum startUpOnOff = 16387;
   readonly attribute command_id generatedCommandList[] = 65528;
   readonly attribute command_id acceptedCommandList[] = 65529;
   readonly attribute attrib_id attributeList[] = 65531;
   readonly attribute bitmap32 featureMap = 65532;
   readonly attribute int16u clusterRevision = 65533;
 
-  request struct AddGroupRequest {
-    group_id groupID = 0;
-    char_string<16> groupName = 1;
+  request struct OffWithEffectRequest {
+    EffectIdentifierEnum effectIdentifier = 0;
+    enum8 effectVariant = 1;
   }
 
-  response struct AddGroupResponse = 0 {
-    enum8 status = 0;
-    group_id groupID = 1;
+  request struct OnWithTimedOffRequest {
+    OnOffControlBitmap onOffControl = 0;
+    int16u onTime = 1;
+    int16u offWaitTime = 2;
   }
 
-  request struct ViewGroupRequest {
-    group_id groupID = 0;
-  }
-
-  response struct ViewGroupResponse = 1 {
-    enum8 status = 0;
-    group_id groupID = 1;
-    char_string<16> groupName = 2;
-  }
-
-  request struct GetGroupMembershipRequest {
-    group_id groupList[] = 0;
-  }
-
-  response struct GetGroupMembershipResponse = 2 {
-    nullable int8u capacity = 0;
-    group_id groupList[] = 1;
-  }
-
-  request struct RemoveGroupRequest {
-    group_id groupID = 0;
-  }
-
-  response struct RemoveGroupResponse = 3 {
-    enum8 status = 0;
-    group_id groupID = 1;
-  }
-
-  request struct AddGroupIfIdentifyingRequest {
-    group_id groupID = 0;
-    char_string<16> groupName = 1;
-  }
-
-  /** The AddGroup command allows a client to add group membership in a particular group for the server endpoint. */
-  fabric command access(invoke: manage) AddGroup(AddGroupRequest): AddGroupResponse = 0;
-  /** The ViewGroup command allows a client to request that the server responds with a ViewGroupResponse command containing the name string for a particular group. */
-  fabric command ViewGroup(ViewGroupRequest): ViewGroupResponse = 1;
-  /** The GetGroupMembership command allows a client to inquire about the group membership of the server endpoint, in a number of ways. */
-  fabric command GetGroupMembership(GetGroupMembershipRequest): GetGroupMembershipResponse = 2;
-  /** The RemoveGroup command allows a client to request that the server removes the membership for the server endpoint, if any, in a particular group. */
-  fabric command access(invoke: manage) RemoveGroup(RemoveGroupRequest): RemoveGroupResponse = 3;
-  /** The RemoveAllGroups command allows a client to direct the server to remove all group associations for the server endpoint. */
-  fabric command access(invoke: manage) RemoveAllGroups(): DefaultSuccess = 4;
-  /** The AddGroupIfIdentifying command allows a client to add group membership in a particular group for the server endpoint, on condition that the endpoint is identifying itself. */
-  fabric command access(invoke: manage) AddGroupIfIdentifying(AddGroupIfIdentifyingRequest): DefaultSuccess = 5;
+  /** On receipt of this command, a device SHALL enter its ‘Off’ state. This state is device dependent, but it is recommended that it is used for power off or similar functions. On receipt of the Off command, the OnTime attribute SHALL be set to 0. */
+  command Off(): DefaultSuccess = 0;
+  /** On receipt of this command, a device SHALL enter its ‘On’ state. This state is device dependent, but it is recommended that it is used for power on or similar functions. On receipt of the On command, if the value of the OnTime attribute is equal to 0, the device SHALL set the OffWaitTime attribute to 0. */
+  command On(): DefaultSuccess = 1;
+  /** On receipt of this command, if a device is in its ‘Off’ state it SHALL enter its ‘On’ state. Otherwise, if it is in its ‘On’ state it SHALL enter its ‘Off’ state. On receipt of the Toggle command, if the value of the OnOff attribute is equal to FALSE and if the value of the OnTime attribute is equal to 0, the device SHALL set the OffWaitTime attribute to 0. If the value of the OnOff attribute is equal to TRUE, the OnTime attribute SHALL be set to 0. */
+  command Toggle(): DefaultSuccess = 2;
+  /** The OffWithEffect command allows devices to be turned off using enhanced ways of fading. */
+  command OffWithEffect(OffWithEffectRequest): DefaultSuccess = 64;
+  /** This command allows the recall of the settings when the device was turned off. */
+  command OnWithRecallGlobalScene(): DefaultSuccess = 65;
+  /** This command allows devices to be turned on for a specific duration with a guarded off duration so that SHOULD the device be subsequently turned off, further OnWithTimedOff commands, received during this time, are prevented from turning the devices back on. */
+  command OnWithTimedOff(OnWithTimedOffRequest): DefaultSuccess = 66;
 }
 
 /** The Descriptor Cluster is meant to replace the support from the Zigbee Device Object (ZDO) for describing a node, its endpoints and clusters. */
@@ -548,26 +494,6 @@ cluster Descriptor = 29 {
   readonly attribute endpoint_no partsList[] = 3;
   readonly attribute optional SemanticTagStruct tagList[] = 4;
   readonly attribute optional char_string<32> endpointUniqueID = 5;
-  readonly attribute command_id generatedCommandList[] = 65528;
-  readonly attribute command_id acceptedCommandList[] = 65529;
-  readonly attribute attrib_id attributeList[] = 65531;
-  readonly attribute bitmap32 featureMap = 65532;
-  readonly attribute int16u clusterRevision = 65533;
-}
-
-/** The Binding Cluster is meant to replace the support from the Zigbee Device Object (ZDO) for supporting the binding table. */
-cluster Binding = 30 {
-  revision 1;
-
-  fabric_scoped struct TargetStruct {
-    optional node_id node = 1;
-    optional group_id group = 2;
-    optional endpoint_no endpoint = 3;
-    optional cluster_id cluster = 4;
-    fabric_idx fabricIndex = 254;
-  }
-
-  attribute access(write: manage) TargetStruct binding[] = 0;
   readonly attribute command_id generatedCommandList[] = 65528;
   readonly attribute command_id acceptedCommandList[] = 65529;
   readonly attribute attrib_id attributeList[] = 65531;
@@ -2392,19 +2318,85 @@ cluster Thermostat = 513 {
   command access(invoke: manage) AtomicRequest(AtomicRequestRequest): AtomicResponse = 254;
 }
 
-/** Attributes and commands for configuring the measurement of temperature, and reporting temperature measurements. */
-cluster TemperatureMeasurement = 1026 {
-  revision 4;
+/** An interface for controlling a fan in a heating/cooling system. */
+cluster FanControl = 514 {
+  revision 5;
 
-  readonly attribute nullable temperature measuredValue = 0;
-  readonly attribute nullable temperature minMeasuredValue = 1;
-  readonly attribute nullable temperature maxMeasuredValue = 2;
-  readonly attribute optional int16u tolerance = 3;
+  enum AirflowDirectionEnum : enum8 {
+    kForward = 0;
+    kReverse = 1;
+  }
+
+  enum FanModeEnum : enum8 {
+    kOff = 0;
+    kLow = 1;
+    kMedium = 2;
+    kHigh = 3;
+    kOn = 4;
+    kAuto = 5;
+    kSmart = 6;
+  }
+
+  enum FanModeSequenceEnum : enum8 {
+    kOffLowMedHigh = 0;
+    kOffLowHigh = 1;
+    kOffLowMedHighAuto = 2;
+    kOffLowHighAuto = 3;
+    kOffHighAuto = 4;
+    kOffHigh = 5;
+  }
+
+  enum StepDirectionEnum : enum8 {
+    kIncrease = 0;
+    kDecrease = 1;
+  }
+
+  bitmap Feature : bitmap32 {
+    kMultiSpeed = 0x1;
+    kAuto = 0x2;
+    kRocking = 0x4;
+    kWind = 0x8;
+    kStep = 0x10;
+    kAirflowDirection = 0x20;
+  }
+
+  bitmap RockBitmap : bitmap8 {
+    kRockLeftRight = 0x1;
+    kRockUpDown = 0x2;
+    kRockRound = 0x4;
+  }
+
+  bitmap WindBitmap : bitmap8 {
+    kSleepWind = 0x1;
+    kNaturalWind = 0x2;
+  }
+
+  attribute FanModeEnum fanMode = 0;
+  readonly attribute FanModeSequenceEnum fanModeSequence = 1;
+  attribute nullable percent percentSetting = 2;
+  readonly attribute percent percentCurrent = 3;
+  readonly attribute optional int8u speedMax = 4;
+  attribute optional nullable int8u speedSetting = 5;
+  readonly attribute optional int8u speedCurrent = 6;
+  readonly attribute optional RockBitmap rockSupport = 7;
+  attribute optional RockBitmap rockSetting = 8;
+  readonly attribute optional WindBitmap windSupport = 9;
+  attribute optional WindBitmap windSetting = 10;
+  attribute optional AirflowDirectionEnum airflowDirection = 11;
   readonly attribute command_id generatedCommandList[] = 65528;
   readonly attribute command_id acceptedCommandList[] = 65529;
   readonly attribute attrib_id attributeList[] = 65531;
   readonly attribute bitmap32 featureMap = 65532;
   readonly attribute int16u clusterRevision = 65533;
+
+  request struct StepRequest {
+    StepDirectionEnum direction = 0;
+    optional boolean wrap = 1;
+    optional boolean lowestOff = 2;
+  }
+
+  /** This command speeds up or slows down the fan, in steps, without a client having to know the fan speed. */
+  command Step(StepRequest): DefaultSuccess = 0;
 }
 
 endpoint 0 {
@@ -2727,10 +2719,8 @@ endpoint 0 {
   }
 }
 endpoint 1 {
-  device type ma_thermostat = 769, version 4;
+  device type ma_room_airconditioner = 114, version 1;
 
-  binding cluster Identify;
-  binding cluster TemperatureMeasurement;
 
   server cluster Identify {
     callback attribute identifyTime;
@@ -2744,24 +2734,17 @@ endpoint 1 {
     handle command Identify;
   }
 
-  server cluster Groups {
-    ram      attribute nameSupport;
+  server cluster OnOff {
+    ram      attribute onOff;
     callback attribute generatedCommandList;
     callback attribute acceptedCommandList;
     callback attribute attributeList;
-    ram      attribute featureMap default = 0;
-    ram      attribute clusterRevision default = 4;
+    ram      attribute featureMap default = 2;
+    ram      attribute clusterRevision default = 6;
 
-    handle command AddGroup;
-    handle command AddGroupResponse;
-    handle command ViewGroup;
-    handle command ViewGroupResponse;
-    handle command GetGroupMembership;
-    handle command GetGroupMembershipResponse;
-    handle command RemoveGroup;
-    handle command RemoveGroupResponse;
-    handle command RemoveAllGroups;
-    handle command AddGroupIfIdentifying;
+    handle command Off;
+    handle command On;
+    handle command Toggle;
   }
 
   server cluster Descriptor {
@@ -2776,37 +2759,48 @@ endpoint 1 {
     callback attribute clusterRevision;
   }
 
-  server cluster Binding {
-    callback attribute binding;
-    callback attribute generatedCommandList;
-    callback attribute acceptedCommandList;
-    callback attribute attributeList;
-    callback attribute featureMap;
-    callback attribute clusterRevision;
-  }
-
   server cluster Thermostat {
     ram      attribute localTemperature;
     ram      attribute outdoorTemperature;
-    ram      attribute absMinHeatSetpointLimit default = 700;
-    ram      attribute absMaxHeatSetpointLimit default = 3000;
+    ram      attribute absMinHeatSetpointLimit default = 1500;
+    ram      attribute absMaxHeatSetpointLimit default = 2800;
     ram      attribute absMinCoolSetpointLimit default = 1600;
     ram      attribute absMaxCoolSetpointLimit default = 3200;
+    ram      attribute HVACSystemTypeConfiguration default = 0x10;
     ram      attribute occupiedCoolingSetpoint default = 2600;
     ram      attribute occupiedHeatingSetpoint default = 2000;
-    ram      attribute minHeatSetpointLimit default = 700;
-    ram      attribute maxHeatSetpointLimit default = 3000;
+    ram      attribute minHeatSetpointLimit default = 1500;
+    ram      attribute maxHeatSetpointLimit default = 2800;
     ram      attribute minCoolSetpointLimit default = 1600;
     ram      attribute maxCoolSetpointLimit default = 3200;
-    ram      attribute minSetpointDeadBand default = 25;
-    ram      attribute controlSequenceOfOperation default = 0x04;
-    ram      attribute systemMode default = 0x01;
+    ram      attribute minSetpointDeadBand default = 20;
+    ram      attribute controlSequenceOfOperation default = 4;
+    ram      attribute systemMode default = 0;
+    ram      attribute ACType default = 0;
+    ram      attribute ACCoilTemperature;
     callback attribute generatedCommandList;
     callback attribute acceptedCommandList;
     callback attribute attributeList;
-    ram      attribute featureMap default = 0x23;
+    ram      attribute featureMap default = 35;
     callback attribute clusterRevision;
 
     handle command SetpointRaiseLower;
+  }
+
+  server cluster FanControl {
+    ram      attribute fanMode default = 0;
+    ram      attribute fanModeSequence default = 2;
+    ram      attribute percentSetting default = 0;
+    ram      attribute percentCurrent default = 0;
+    ram      attribute speedMax default = 7;
+    ram      attribute speedSetting default = 0;
+    ram      attribute speedCurrent default = 0;
+    ram      attribute rockSupport default = 0x03;
+    ram      attribute rockSetting default = 0x00;
+    callback attribute generatedCommandList;
+    callback attribute acceptedCommandList;
+    callback attribute attributeList;
+    ram      attribute featureMap default = 0x07;
+    ram      attribute clusterRevision default = 5;
   }
 }

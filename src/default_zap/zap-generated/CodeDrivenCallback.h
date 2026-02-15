@@ -31,10 +31,6 @@ void MatterDescriptorClusterInitCallback(chip::EndpointId endpointId);
 
 void MatterDescriptorClusterShutdownCallback(chip::EndpointId endpointId);
 
-void MatterBindingClusterInitCallback(chip::EndpointId endpointId);
-
-void MatterBindingClusterShutdownCallback(chip::EndpointId endpointId);
-
 void MatterAccessControlClusterInitCallback(chip::EndpointId endpointId);
 
 void MatterAccessControlClusterShutdownCallback(chip::EndpointId endpointId);
@@ -45,7 +41,8 @@ void MatterBasicInformationClusterShutdownCallback(chip::EndpointId endpointId);
 
 void MatterGeneralCommissioningClusterInitCallback(chip::EndpointId endpointId);
 
-void MatterGeneralCommissioningClusterShutdownCallback(chip::EndpointId endpointId);
+void MatterGeneralCommissioningClusterShutdownCallback(
+    chip::EndpointId endpointId);
 
 void MatterDiagnosticLogsClusterInitCallback(chip::EndpointId endpointId);
 
@@ -53,24 +50,33 @@ void MatterDiagnosticLogsClusterShutdownCallback(chip::EndpointId endpointId);
 
 void MatterGeneralDiagnosticsClusterInitCallback(chip::EndpointId endpointId);
 
-void MatterGeneralDiagnosticsClusterShutdownCallback(chip::EndpointId endpointId);
+void MatterGeneralDiagnosticsClusterShutdownCallback(
+    chip::EndpointId endpointId);
 
 void MatterSoftwareDiagnosticsClusterInitCallback(chip::EndpointId endpointId);
 
-void MatterSoftwareDiagnosticsClusterShutdownCallback(chip::EndpointId endpointId);
+void MatterSoftwareDiagnosticsClusterShutdownCallback(
+    chip::EndpointId endpointId);
 
-void MatterWiFiNetworkDiagnosticsClusterInitCallback(chip::EndpointId endpointId);
+void MatterWiFiNetworkDiagnosticsClusterInitCallback(
+    chip::EndpointId endpointId);
 
-void MatterWiFiNetworkDiagnosticsClusterShutdownCallback(chip::EndpointId endpointId);
+void MatterWiFiNetworkDiagnosticsClusterShutdownCallback(
+    chip::EndpointId endpointId);
 
-void MatterAdministratorCommissioningClusterInitCallback(chip::EndpointId endpointId);
+void MatterAdministratorCommissioningClusterInitCallback(
+    chip::EndpointId endpointId);
 
-void MatterAdministratorCommissioningClusterShutdownCallback(chip::EndpointId endpointId);
+void MatterAdministratorCommissioningClusterShutdownCallback(
+    chip::EndpointId endpointId);
 
-void MatterOperationalCredentialsClusterInitCallback(chip::EndpointId endpointId);
+void MatterOperationalCredentialsClusterInitCallback(
+    chip::EndpointId endpointId);
 
-void MatterOperationalCredentialsClusterShutdownCallback(chip::EndpointId endpointId);
+void MatterOperationalCredentialsClusterShutdownCallback(
+    chip::EndpointId endpointId);
 
 void MatterGroupKeyManagementClusterInitCallback(chip::EndpointId endpointId);
 
-void MatterGroupKeyManagementClusterShutdownCallback(chip::EndpointId endpointId);
+void MatterGroupKeyManagementClusterShutdownCallback(
+    chip::EndpointId endpointId);

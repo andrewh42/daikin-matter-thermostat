@@ -18,6 +18,7 @@ LOG_MODULE_DECLARE(app, CONFIG_CHIP_APP_LOG_LEVEL);
 
 using namespace chip;
 using namespace chip::app::Clusters;
+using namespace ::chip::app::Clusters::OnOff;
 
 void MatterPostAttributeChangeCallback(const chip::app::ConcreteAttributePath &attributePath, uint8_t type,
 				       uint16_t size, uint8_t *value)
@@ -26,11 +27,20 @@ void MatterPostAttributeChangeCallback(const chip::app::ConcreteAttributePath &a
 	AttributeId attributeId = attributePath.mAttributeId;
 	ChipLogProgress(Zcl, "Cluster callback: " ChipLogFormatMEI, ChipLogValueMEI(clusterId));
 
-	if (clusterId == Identify::Id) {
+	if (clusterId == OnOff::Id && attributeId == OnOff::Attributes::OnOff::Id) {
+		ChipLogProgress(Zcl, "Cluster OnOff: attribute OnOff set to %" PRIu8 "", *value);
+
+		Nrf::GetBoard().GetLED(Nrf::DeviceLeds::LED1).Set(*value);
+	} else if (clusterId == Identify::Id) {
 		ChipLogProgress(Zcl, "Identify attribute ID: " ChipLogFormatMEI " Type: %u Value: %u, length %u",
 				ChipLogValueMEI(attributeId), type, *value, size);
 	} else if (clusterId == Thermostat::Id) {
 		TemperatureManager::Instance().AttributeChangeHandler(attributePath.mEndpointId, attributeId, value,
 								      size);
 	}
+}
+
+void emberAfOnOffClusterInitCallback(EndpointId endpoint)
+{
+	ChipLogProgress(Zcl, "OnOff cluster init callback for endpoint %u", endpoint);
 }
