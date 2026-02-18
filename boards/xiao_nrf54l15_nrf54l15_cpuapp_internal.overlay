@@ -16,6 +16,10 @@
 	};
 };
 
+&led0 {
+	gpios = <&gpio2 0 GPIO_ACTIVE_LOW>; /* board default is incorrectly set as GPIO_ACTIVE_HIGH */
+};
+
 /* restore full RRAM and SRAM space - by default some parts are dedicated to FLRP */
 &cpuapp_rram {
 	reg = <0x0 DT_SIZE_K(1524)>;

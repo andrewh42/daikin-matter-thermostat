@@ -74,7 +74,7 @@ CHIP_ERROR TemperatureManager::InitLed()
 		return CHIP_ERROR_INTERNAL;
 	}
 
-	int ret = gpio_pin_configure_dt(&led0, GPIO_OUTPUT_ACTIVE);
+	int ret = gpio_pin_configure_dt(&led0, GPIO_OUTPUT_INACTIVE);
 	if (ret < 0) {
 		LOG_ERR("Failed to configure LED0 GPIO pin, error: %d", ret);
 		return CHIP_ERROR_INTERNAL;
@@ -204,7 +204,7 @@ void TemperatureManager::TemperatureAttributeChangeHandler(AttributeId attribute
 
 void TemperatureManager::UpdatePowerIndicator()
 {
-	gpio_pin_set_dt(&led0, !mOnOff);
+	gpio_pin_set_dt(&led0, mOnOff);
 }
 
 app::DataModel::Nullable<int16_t> TemperatureManager::GetLocalTemp()
