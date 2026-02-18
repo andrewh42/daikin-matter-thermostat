@@ -7,6 +7,7 @@
 #include "temperature_manager.h"
 #include <app-common/zap-generated/cluster-objects.h>
 #include <platform/PlatformManager.h>
+#include <zephyr/drivers/gpio.h>
 #include <zephyr/logging/log.h>
 
 LOG_MODULE_DECLARE(app, CONFIG_CHIP_APP_LOG_LEVEL);
@@ -14,6 +15,7 @@ LOG_MODULE_DECLARE(app, CONFIG_CHIP_APP_LOG_LEVEL);
 using namespace chip;
 using namespace ::chip::DeviceLayer;
 using namespace ::chip::app::Clusters;
+using namespace chip::app::Clusters::FanControl::Attributes;
 using namespace chip::app::Clusters::Thermostat::Attributes;
 using namespace Protocols::InteractionModel;
 
@@ -21,6 +23,7 @@ constexpr EndpointId kThermostatEndpoint = 1;
 
 namespace
 {
+static const struct gpio_dt_spec led0 = GPIO_DT_SPEC_GET(DT_ALIAS(led0), gpios);
 
 /* Convert and return only complete part of value to printable type */
 uint8_t ReturnCompleteValue(int16_t Value)
@@ -41,6 +44,8 @@ uint8_t ReturnRemainderValue(int16_t Value)
 
 CHIP_ERROR TemperatureManager::Init()
 {
+	ReturnErrorOnFailure(InitLed());
+
 	CHIP_ERROR err = CHIP_NO_ERROR;
 
 	PlatformMgr().LockChipStack();
@@ -62,10 +67,52 @@ exit:
 	return err;
 }
 
+CHIP_ERROR TemperatureManager::InitLed()
+{
+	if (!gpio_is_ready_dt(&led0)) {
+		LOG_ERR("LED0 GPIO device is not ready");
+		return CHIP_ERROR_INTERNAL;
+	}
+
+	int ret = gpio_pin_configure_dt(&led0, GPIO_OUTPUT_ACTIVE);
+	if (ret < 0) {
+		LOG_ERR("Failed to configure LED0 GPIO pin, error: %d", ret);
+		return CHIP_ERROR_INTERNAL;
+	}
+
+	return CHIP_NO_ERROR;
+}
+
+const char* TemperatureManager::GetThermModeStr()
+{
+	switch (mThermMode) {
+	case app::Clusters::Thermostat::SystemModeEnum::kOff:
+		return "Off";
+	case app::Clusters::Thermostat::SystemModeEnum::kAuto:
+		return "Auto";
+	case app::Clusters::Thermostat::SystemModeEnum::kCool:
+		return "Cool";
+	case app::Clusters::Thermostat::SystemModeEnum::kHeat:
+		return "Heat";
+	case app::Clusters::Thermostat::SystemModeEnum::kEmergencyHeat:
+		return "Emergency Heat";
+	case app::Clusters::Thermostat::SystemModeEnum::kPrecooling:
+		return "Precooling";
+	case app::Clusters::Thermostat::SystemModeEnum::kFanOnly:
+		return "Fan Only";
+	case app::Clusters::Thermostat::SystemModeEnum::kDry:
+		return "Dry";
+	case app::Clusters::Thermostat::SystemModeEnum::kSleep:
+		return "Sleep";
+	default:
+		return "Unknown Mode";
+	}
+}
+
 void TemperatureManager::LogThermostatStatus()
 {
 	LOG_INF("Thermostat:");
-	LOG_INF("	Mode - %d", static_cast<uint8_t>(mThermMode));
+	LOG_INF("	Mode - %s", GetThermModeStr());
 	if (!(GetLocalTemp().IsNull())) {
 		int16_t tempValue = GetLocalTemp().Value();
 		LOG_INF("	LocalTemperature - %d,%d'C", ReturnCompleteValue(tempValue),
@@ -86,7 +133,34 @@ void TemperatureManager::LogThermostatStatus()
 		ReturnRemainderValue(mCoolingCelsiusSetPoint));
 }
 
-void TemperatureManager::AttributeChangeHandler(EndpointId endpointId, AttributeId attributeId, uint8_t *value,
+void TemperatureManager::AttributeChangeHandler(const ConcreteAttributePath &attributePath, uint8_t *value,
+						uint16_t size)
+{
+	switch (attributePath.mClusterId) {
+	case FanControl::Id:
+		LOG_INF("FanControl cluster attribute changed: Attribute ID %u, Value: %u, Size: %u",
+			attributePath.mAttributeId, *value, size);
+		break;
+	case Thermostat::Id:
+		TemperatureAttributeChangeHandler(attributePath.mAttributeId, value, size);
+		break;
+	case OnOff::Id:
+		OnOffAttributeChangeHandler(attributePath.mAttributeId, value, size);
+		break;
+	default:
+		LOG_INF("Unhandled cluster ID: %u", attributePath.mClusterId);
+	}
+}
+
+void TemperatureManager::OnOffAttributeChangeHandler(AttributeId attributeId, uint8_t *value,
+						uint16_t size)
+{
+	mOnOff = *value;
+	LOG_INF("Cluster OnOff: attribute OnOff set to %s", mOnOff ? "ON" : "OFF");
+	UpdatePowerIndicator();
+}
+
+void TemperatureManager::TemperatureAttributeChangeHandler(AttributeId attributeId, uint8_t *value,
 						uint16_t size)
 {
 	Status status;
@@ -116,6 +190,7 @@ void TemperatureManager::AttributeChangeHandler(EndpointId endpointId, Attribute
 
 	case SystemMode::Id: {
 		mThermMode = static_cast<app::Clusters::Thermostat::SystemModeEnum>(*value);
+		LOG_INF("System Mode changed to %s", GetThermModeStr());
 	} break;
 
 	default: {
@@ -125,6 +200,11 @@ void TemperatureManager::AttributeChangeHandler(EndpointId endpointId, Attribute
 	}
 
 	LogThermostatStatus();
+}
+
+void TemperatureManager::UpdatePowerIndicator()
+{
+	gpio_pin_set_dt(&led0, !mOnOff);
 }
 
 app::DataModel::Nullable<int16_t> TemperatureManager::GetLocalTemp()

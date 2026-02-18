@@ -27,16 +27,11 @@ void MatterPostAttributeChangeCallback(const chip::app::ConcreteAttributePath &a
 	AttributeId attributeId = attributePath.mAttributeId;
 	ChipLogProgress(Zcl, "Cluster callback: " ChipLogFormatMEI, ChipLogValueMEI(clusterId));
 
-	if (clusterId == OnOff::Id && attributeId == OnOff::Attributes::OnOff::Id) {
-		ChipLogProgress(Zcl, "Cluster OnOff: attribute OnOff set to %" PRIu8 "", *value);
-
-		Nrf::GetBoard().GetLED(Nrf::DeviceLeds::LED1).Set(*value);
-	} else if (clusterId == Identify::Id) {
+	if (clusterId == Identify::Id) {
 		ChipLogProgress(Zcl, "Identify attribute ID: " ChipLogFormatMEI " Type: %u Value: %u, length %u",
 				ChipLogValueMEI(attributeId), type, *value, size);
-	} else if (clusterId == Thermostat::Id) {
-		TemperatureManager::Instance().AttributeChangeHandler(attributePath.mEndpointId, attributeId, value,
-								      size);
+	} else {
+		TemperatureManager::Instance().AttributeChangeHandler(attributePath, value, size);
 	}
 }
 

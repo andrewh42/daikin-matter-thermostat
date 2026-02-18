@@ -9,10 +9,12 @@
 #include <stdint.h>
 
 #include <app-common/zap-generated/attributes/Accessors.h>
+#include <app/ConcreteAttributePath.h>
 
 #include <lib/core/CHIPError.h>
 
 using namespace chip;
+using namespace chip::app;
 
 class TemperatureManager {
 public:
@@ -23,16 +25,23 @@ public:
 	};
 
 	CHIP_ERROR Init();
-	void AttributeChangeHandler(EndpointId endpointId, AttributeId attributeId, uint8_t *value, uint16_t size);
-	app::DataModel::Nullable<int16_t> GetLocalTemp();
-	app::DataModel::Nullable<int16_t> GetOutdoorTemp();
+	void AttributeChangeHandler(const ConcreteAttributePath &attributePath, uint8_t *value, uint16_t size);
+	DataModel::Nullable<int16_t> GetLocalTemp();
+	DataModel::Nullable<int16_t> GetOutdoorTemp();
 
 	void LogThermostatStatus();
 
 private:
-	app::DataModel::Nullable<int16_t> mLocalTempCelsius;
-	app::DataModel::Nullable<int16_t> mOutdoorTempCelsius;
+	bool mOnOff;
+	DataModel::Nullable<int16_t> mLocalTempCelsius;
+	DataModel::Nullable<int16_t> mOutdoorTempCelsius;
 	int16_t mCoolingCelsiusSetPoint;
 	int16_t mHeatingCelsiusSetPoint;
-	app::Clusters::Thermostat::SystemModeEnum mThermMode;
+	Clusters::Thermostat::SystemModeEnum mThermMode;
+
+	void OnOffAttributeChangeHandler(AttributeId attributeId, uint8_t *value, uint16_t size);
+	void TemperatureAttributeChangeHandler(AttributeId attributeId, uint8_t *value, uint16_t size);
+	CHIP_ERROR InitLed();
+	const char* GetThermModeStr();
+	void UpdatePowerIndicator();
 };
