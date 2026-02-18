@@ -2967,7 +2967,7 @@ endpoint 1 {
     ram      attribute minSetpointDeadBand default = 20;
     ram      attribute controlSequenceOfOperation default = 4;
     ram      attribute systemMode default = 0;
-    ram      attribute ACType default = 0;
+    ram      attribute ACType default = 4;
     ram      attribute ACCoilTemperature;
     callback attribute generatedCommandList;
     callback attribute acceptedCommandList;
@@ -2983,7 +2983,7 @@ endpoint 1 {
     ram      attribute fanModeSequence default = 2;
     ram      attribute percentSetting default = 0;
     ram      attribute percentCurrent default = 0;
-    ram      attribute speedMax default = 7;
+    ram      attribute speedMax default = 6;
     ram      attribute speedSetting default = 0;
     ram      attribute speedCurrent default = 0;
     ram      attribute rockSupport default = 0x03;

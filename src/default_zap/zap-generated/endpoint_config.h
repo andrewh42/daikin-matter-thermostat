@@ -63,7 +63,7 @@
         {(uint16_t)0x4, (uint16_t)0x0,                                         \
          (uint16_t)0x5}, /* ControlSequenceOfOperation */                      \
         {(uint16_t)0x0, (uint16_t)0x0, (uint16_t)0x9}, /* SystemMode */        \
-        {(uint16_t)0x0, (uint16_t)0x0, (uint16_t)0x4}, /* ACType */            \
+        {(uint16_t)0x4, (uint16_t)0x0, (uint16_t)0x4}, /* ACType */            \
                                                                                \
         /* Endpoint: 1, Cluster: Fan Control (server) */                       \
         {(uint16_t)0x0, (uint16_t)0x0, (uint16_t)0x6},  /* FanMode */          \
@@ -737,7 +737,7 @@
              ZAP_ATTRIBUTE_MASK(NULLABLE)}, /* PercentSetting */               \
         {ZAP_SIMPLE_DEFAULT(0), 0x00000003, 1, ZAP_TYPE(PERCENT),              \
          ZAP_ATTRIBUTE_MASK(READABLE)}, /* PercentCurrent */                   \
-        {ZAP_SIMPLE_DEFAULT(7), 0x00000004, 1, ZAP_TYPE(INT8U),                \
+        {ZAP_SIMPLE_DEFAULT(6), 0x00000004, 1, ZAP_TYPE(INT8U),                \
          ZAP_ATTRIBUTE_MASK(READABLE)}, /* SpeedMax */                         \
         {ZAP_MIN_MAX_DEFAULTS_INDEX(13), 0x00000005, 1, ZAP_TYPE(INT8U),       \
          ZAP_ATTRIBUTE_MASK(MIN_MAX) | ZAP_ATTRIBUTE_MASK(WRITABLE) |          \
