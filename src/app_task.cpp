@@ -31,6 +31,8 @@ constexpr EndpointId kThermostatEndpointId = 1;
 Nrf::Matter::IdentifyCluster sIdentifyCluster(kThermostatEndpointId);
 
 #define TEMPERATURE_BUTTON_MASK DK_BTN2_MSK
+
+const struct device* s21_uart = DEVICE_DT_GET(DT_NODE_BY_LABEL(uart20));
 } /* namespace */
 
 void AppTask::ButtonEventHandler(Nrf::ButtonState state, Nrf::ButtonMask hasChanged)
