@@ -32,7 +32,7 @@ Nrf::Matter::IdentifyCluster sIdentifyCluster(kThermostatEndpointId);
 
 #define TEMPERATURE_BUTTON_MASK DK_BTN2_MSK
 
-const struct device* s21_uart = DEVICE_DT_GET(DT_NODE_BY_LABEL(uart20));
+const struct device* s21UartDev = DEVICE_DT_GET(DT_ALIAS(s21uart));
 } /* namespace */
 
 void AppTask::ButtonEventHandler(Nrf::ButtonState state, Nrf::ButtonMask hasChanged)
@@ -53,6 +53,11 @@ void AppTask::ThermostatHandler(const TemperatureButtonAction &action)
 
 CHIP_ERROR AppTask::Init()
 {
+	if (!device_is_ready(s21UartDev)) {
+		LOG_ERR("S21 UART device is not ready");
+		return chip::System::MapErrorZephyr(-ENODEV);;
+	}
+
 	/* Initialize Matter stack */
 	ReturnErrorOnFailure(Nrf::Matter::PrepareServer(Nrf::Matter::InitData{ .mPostServerInitClbk = [] {
 		CHIP_ERROR err = TempSensorManager::Instance().Init();
