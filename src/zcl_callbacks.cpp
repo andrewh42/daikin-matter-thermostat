@@ -7,7 +7,7 @@
 
 #include "app_task.h"
 #include "temp_sensor_manager.h"
-#include "temperature_manager.h"
+#include "airconditioner_manager.h"
 
 #include <app-common/zap-generated/ids/Attributes.h>
 #include <app-common/zap-generated/ids/Clusters.h>
@@ -31,7 +31,7 @@ void MatterPostAttributeChangeCallback(const chip::app::ConcreteAttributePath &a
 		ChipLogProgress(Zcl, "Identify attribute ID: " ChipLogFormatMEI " Type: %u Value: %u, length %u",
 				ChipLogValueMEI(attributeId), type, *value, size);
 	} else {
-		TemperatureManager::Instance().AttributeChangeHandler(attributePath, value, size);
+		AirConditionerManager::Instance().AttributeChangeHandler(attributePath, value, size);
 	}
 }
 

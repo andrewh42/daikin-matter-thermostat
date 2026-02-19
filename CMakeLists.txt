@@ -33,7 +33,7 @@ target_sources(app PRIVATE
   src/app_task.cpp
   src/main.cpp
   src/temp_sensor_manager.cpp
-  src/temperature_manager.cpp
+  src/airconditioner_manager.cpp
   src/temperature_measurement/sensor.cpp
   src/zcl_callbacks.cpp
   ${ZEPHYR_NRF_MODULE_DIR}/samples/matter/common/src/binding/binding_handler.cpp

@@ -7,7 +7,7 @@
 #include "app_task.h"
 
 #include "temp_sensor_manager.h"
-#include "temperature_manager.h"
+#include "airconditioner_manager.h"
 
 #include "app/matter_init.h"
 #include "app/task_executor.h"
@@ -45,7 +45,7 @@ void AppTask::ButtonEventHandler(Nrf::ButtonState state, Nrf::ButtonMask hasChan
 void AppTask::ThermostatHandler(const TemperatureButtonAction &action)
 {
 	if (action == TemperatureButtonAction::Pushed) {
-		TemperatureManager::Instance().LogThermostatStatus();
+		AirConditionerManager::Instance().LogThermostatStatus();
 	}
 }
 
@@ -58,9 +58,9 @@ CHIP_ERROR AppTask::Init()
 			LOG_ERR("TempSensorManager Init fail");
 			return err;
 		}
-		err = TemperatureManager::Instance().Init();
+		err = AirConditionerManager::Instance().Init();
 		if (err != CHIP_NO_ERROR) {
-			LOG_ERR("TemperatureManager Init fail");
+			LOG_ERR("AirConditionerManager Init fail");
 		}
 		return err;
 	} }));

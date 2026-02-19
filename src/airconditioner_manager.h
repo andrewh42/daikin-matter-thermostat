@@ -16,12 +16,12 @@
 using namespace chip;
 using namespace chip::app;
 
-class TemperatureManager {
+class AirConditionerManager {
 public:
-	static TemperatureManager &Instance()
+	static AirConditionerManager &Instance()
 	{
-		static TemperatureManager sTemperatureManager;
-		return sTemperatureManager;
+		static AirConditionerManager sAirConditionerManager;
+		return sAirConditionerManager;
 	};
 
 	CHIP_ERROR Init();

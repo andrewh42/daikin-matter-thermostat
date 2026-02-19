@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: LicenseRef-Nordic-5-Clause
  */
 
-#include "temperature_manager.h"
+#include "airconditioner_manager.h"
 #include <app-common/zap-generated/cluster-objects.h>
 #include <platform/PlatformManager.h>
 #include <zephyr/drivers/gpio.h>
@@ -42,7 +42,7 @@ uint8_t ReturnRemainderValue(int16_t Value)
 
 } /* namespace */
 
-CHIP_ERROR TemperatureManager::Init()
+CHIP_ERROR AirConditionerManager::Init()
 {
 	ReturnErrorOnFailure(InitLed());
 
@@ -67,7 +67,7 @@ exit:
 	return err;
 }
 
-CHIP_ERROR TemperatureManager::InitLed()
+CHIP_ERROR AirConditionerManager::InitLed()
 {
 	if (!gpio_is_ready_dt(&led0)) {
 		LOG_ERR("LED0 GPIO device is not ready");
@@ -83,7 +83,7 @@ CHIP_ERROR TemperatureManager::InitLed()
 	return CHIP_NO_ERROR;
 }
 
-const char* TemperatureManager::GetThermModeStr()
+const char* AirConditionerManager::GetThermModeStr()
 {
 	switch (mThermMode) {
 	case app::Clusters::Thermostat::SystemModeEnum::kOff:
@@ -109,7 +109,7 @@ const char* TemperatureManager::GetThermModeStr()
 	}
 }
 
-void TemperatureManager::LogThermostatStatus()
+void AirConditionerManager::LogThermostatStatus()
 {
 	LOG_INF("Thermostat:");
 	LOG_INF("	Mode - %s", GetThermModeStr());
@@ -133,7 +133,7 @@ void TemperatureManager::LogThermostatStatus()
 		ReturnRemainderValue(mCoolingCelsiusSetPoint));
 }
 
-void TemperatureManager::AttributeChangeHandler(const ConcreteAttributePath &attributePath, uint8_t *value,
+void AirConditionerManager::AttributeChangeHandler(const ConcreteAttributePath &attributePath, uint8_t *value,
 						uint16_t size)
 {
 	switch (attributePath.mClusterId) {
@@ -152,7 +152,7 @@ void TemperatureManager::AttributeChangeHandler(const ConcreteAttributePath &att
 	}
 }
 
-void TemperatureManager::OnOffAttributeChangeHandler(AttributeId attributeId, uint8_t *value,
+void AirConditionerManager::OnOffAttributeChangeHandler(AttributeId attributeId, uint8_t *value,
 						uint16_t size)
 {
 	mOnOff = *value;
@@ -160,7 +160,7 @@ void TemperatureManager::OnOffAttributeChangeHandler(AttributeId attributeId, ui
 	UpdatePowerIndicator();
 }
 
-void TemperatureManager::TemperatureAttributeChangeHandler(AttributeId attributeId, uint8_t *value,
+void AirConditionerManager::TemperatureAttributeChangeHandler(AttributeId attributeId, uint8_t *value,
 						uint16_t size)
 {
 	Status status;
@@ -202,17 +202,17 @@ void TemperatureManager::TemperatureAttributeChangeHandler(AttributeId attribute
 	LogThermostatStatus();
 }
 
-void TemperatureManager::UpdatePowerIndicator()
+void AirConditionerManager::UpdatePowerIndicator()
 {
 	gpio_pin_set_dt(&led0, mOnOff);
 }
 
-app::DataModel::Nullable<int16_t> TemperatureManager::GetLocalTemp()
+app::DataModel::Nullable<int16_t> AirConditionerManager::GetLocalTemp()
 {
 	return mLocalTempCelsius;
 }
 
-app::DataModel::Nullable<int16_t> TemperatureManager::GetOutdoorTemp()
+app::DataModel::Nullable<int16_t> AirConditionerManager::GetOutdoorTemp()
 {
 	return mOutdoorTempCelsius;
 }
