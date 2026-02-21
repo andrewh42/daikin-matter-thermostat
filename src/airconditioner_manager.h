@@ -5,6 +5,8 @@
  */
 #pragma once
 
+#include "s21/S21Presentation.h"
+
 #include <stdbool.h>
 #include <stdint.h>
 
@@ -24,7 +26,7 @@ public:
 		return sAirConditionerManager;
 	};
 
-	CHIP_ERROR Init();
+	CHIP_ERROR Init(S21Presentation& s21Presentation);
 	void AttributeChangeHandler(const ConcreteAttributePath &attributePath, uint8_t *value, uint16_t size);
 	DataModel::Nullable<int16_t> GetLocalTemp();
 	DataModel::Nullable<int16_t> GetOutdoorTemp();
@@ -32,6 +34,7 @@ public:
 	void LogThermostatStatus();
 
 private:
+	S21Presentation* mS21Presentation;
 	bool mOnOff;
 	DataModel::Nullable<int16_t> mLocalTempCelsius;
 	DataModel::Nullable<int16_t> mOutdoorTempCelsius;

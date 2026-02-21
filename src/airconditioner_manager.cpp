@@ -42,8 +42,10 @@ uint8_t ReturnRemainderValue(int16_t Value)
 
 } /* namespace */
 
-CHIP_ERROR AirConditionerManager::Init()
+CHIP_ERROR AirConditionerManager::Init(S21Presentation& s21Presentation)
 {
+	mS21Presentation = &s21Presentation;
+
 	ReturnErrorOnFailure(InitLed());
 
 	CHIP_ERROR err = CHIP_NO_ERROR;

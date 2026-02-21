@@ -74,6 +74,12 @@ Remove the `-DEXTRA_CONF_FILE=prj_release.conf` from the end of the `west build`
 to create debug builds to play around with.
 
 
+## Using
+
+Details for adding the device to your Matter controller (e.g. Apple Home) are contained in the build
+file `build-<name>/daikin-matter-airconditioner/zephyr/factory_data.txt`.
+
+
 ## Licence
 
 This software is licenced under the [Apache Licence 2.0](https://spdx.org/licenses/Apache-2.0.html),

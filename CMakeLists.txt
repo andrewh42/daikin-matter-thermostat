@@ -30,10 +30,12 @@ target_include_directories(app PRIVATE
 )
 
 target_sources(app PRIVATE
+  src/airconditioner_manager.cpp
   src/app_task.cpp
   src/main.cpp
+  src/s21/S21DataLinkUart.cpp
+  src/s21/S21Presentation.cpp
   src/temp_sensor_manager.cpp
-  src/airconditioner_manager.cpp
   src/temperature_measurement/sensor.cpp
   src/zcl_callbacks.cpp
   ${ZEPHYR_NRF_MODULE_DIR}/samples/matter/common/src/binding/binding_handler.cpp
