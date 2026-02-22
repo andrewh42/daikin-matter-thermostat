@@ -22,24 +22,6 @@ static int16_t tempByteToSetPoint(uint8_t tempByte)
     return static_cast<int16_t>((tempByte - static_cast<uint8_t>('@')) * 50 + 1800);
 }
 
-// FanMode → S21 fan byte: Low→'3', MidLow→'4', Medium→'5', MidHigh→'6', High→'7', Auto→'A', Quiet→'B'
-static uint8_t fanModeToFanByte(FanMode fanMode)
-{
-    static constexpr uint8_t kFanTable[] = {'3', '4', '5', '6', '7', 'A', 'B'};
-    return kFanTable[static_cast<int>(fanMode)];
-}
-
-// S21 fan byte → FanMode
-static FanMode fanByteToFanMode(uint8_t fanByte)
-{
-    if (fanByte >= '3' && fanByte <= '7') {
-        return static_cast<FanMode>(fanByte - '3'); // Low=0 … High=4
-    } else if (fanByte == 'A') {
-        return FanMode::Auto;
-    } else {
-        return FanMode::Quiet;
-    }
-}
 
 int S21Presentation::setOperation(bool onOff, OperatingMode mode, int16_t setPoint, FanMode fanMode)
 {
@@ -47,10 +29,10 @@ int S21Presentation::setOperation(bool onOff, OperatingMode mode, int16_t setPoi
         return -EINVAL;
     }
 
-    uint8_t power    = onOff ? 0x01 : 0x00;
+    uint8_t power    = onOff ? '1' : '0';
     uint8_t modeByte = static_cast<uint8_t>(mode);
     uint8_t tempByte = setPointToTempByte(setPoint);
-    uint8_t fanByte  = fanModeToFanByte(fanMode);
+    uint8_t fanByte  = static_cast<uint8_t>(fanMode);
 
     m_dataLink.encodeAndTransmit({
         std::byte{'D'}, std::byte{'1'},
@@ -71,10 +53,10 @@ S21Presentation::getOperation()
         return tl::unexpected(response.error());
     }
 
-    bool onOff       = (*response)[2] != std::byte{0};
+    bool onOff       = (*response)[2] != std::byte{'0'};
     auto mode        = static_cast<OperatingMode>(static_cast<uint8_t>((*response)[3]));
     int16_t setPoint = tempByteToSetPoint(static_cast<uint8_t>((*response)[4]));
-    FanMode fanMode  = fanByteToFanMode(static_cast<uint8_t>((*response)[5]));
+    FanMode fanMode  = static_cast<FanMode>(static_cast<uint8_t>((*response)[5]));
 
     return std::make_tuple(onOff, mode, setPoint, fanMode);
 }
