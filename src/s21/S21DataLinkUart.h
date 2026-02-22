@@ -6,13 +6,14 @@
 
 #include "S21DataLink.h"
 
-class S21DataLinkUart : public S21DataLink {
-public:
-    S21DataLinkUart(const struct device* uartDev) : m_uartDev(uartDev) {};
+class S21DataLinkUart: public S21DataLink {
+  public:
+    S21DataLinkUart(const struct device* uartDev)
+            : m_uartDev(uartDev) {};
 
     void encodeAndTransmit(std::vector<std::byte> command) override;
     tl::expected<std::vector<std::byte>, S21DataLinkError> receiveAndDecode() override;
 
-private:
+  private:
     const struct device* m_uartDev;
 };

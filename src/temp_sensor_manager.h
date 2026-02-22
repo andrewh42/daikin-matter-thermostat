@@ -17,21 +17,21 @@ using namespace chip;
 constexpr uint16_t kSensorTimerPeriodMs = 30000; /* 30s timer period*/
 
 class TempSensorManager {
-public:
-	CHIP_ERROR Init();
+  public:
+    CHIP_ERROR Init();
 
-	static TempSensorManager &Instance()
-	{
-		static TempSensorManager sTempSensorManager;
-		return sTempSensorManager;
-	};
+    static TempSensorManager& Instance()
+    {
+        static TempSensorManager sTempSensorManager;
+        return sTempSensorManager;
+    };
 
-	static void SetLocalTemperature(int16_t temperature);
-	static void ClearLocalTemperature();
-	static void SetOutdoorTemperature(int16_t temperature);
-	static void ClearOutdoorTemperature();
+    static void SetLocalTemperature(int16_t temperature);
+    static void ClearLocalTemperature();
+    static void SetOutdoorTemperature(int16_t temperature);
+    static void ClearOutdoorTemperature();
 
-private:
-	static void TimerEventHandler(k_timer *timer);
-	static void SensorTimerEventHandler();
+  private:
+    static void TimerEventHandler(k_timer* timer);
+    static void SensorTimerEventHandler();
 };

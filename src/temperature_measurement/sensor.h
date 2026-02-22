@@ -11,25 +11,25 @@
 
 using namespace ::Nrf::Matter;
 class TemperatureSensor {
-public:
-	TemperatureSensor();
+  public:
+    TemperatureSensor();
 
-	static TemperatureSensor &Instance()
-	{
-		static TemperatureSensor sSensor;
-		return sSensor;
-	};
+    static TemperatureSensor& Instance()
+    {
+        static TemperatureSensor sSensor;
+        return sSensor;
+    };
 
-	void FullMeasurement();
-	void ExternalMeasurement();
-	void InternalMeasurement();
+    void FullMeasurement();
+    void ExternalMeasurement();
+    void InternalMeasurement();
 
-private:
-	static void ExternalTemperatureMeasurementReadHandler(const chip::app::Clusters::Binding::TableEntry &binding,
-							      chip::OperationalDeviceProxy *deviceProxy,
-							      BindingHandler::BindingData &bindingData);
+  private:
+    static void ExternalTemperatureMeasurementReadHandler(const chip::app::Clusters::Binding::TableEntry& binding,
+                                                          chip::OperationalDeviceProxy* deviceProxy,
+                                                          BindingHandler::BindingData& bindingData);
 
-	int16_t mPreviousTemperature;
-	uint8_t mMockTempIndex;
-	uint8_t mCycleCounter;
+    int16_t mPreviousTemperature;
+    uint8_t mMockTempIndex;
+    uint8_t mCycleCounter;
 };

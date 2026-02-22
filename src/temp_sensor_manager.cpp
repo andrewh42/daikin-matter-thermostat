@@ -19,20 +19,20 @@ k_timer sSensorTimer;
 
 CHIP_ERROR TempSensorManager::Init()
 {
-	k_timer_init(&sSensorTimer, &TempSensorManager::TimerEventHandler, nullptr);
-	k_timer_start(&sSensorTimer, K_MSEC(kSensorTimerPeriodMs), K_MSEC(kSensorTimerPeriodMs));
-	/* Workaround: Default null values are not correctly propagated from the zap file. Set it manually to make sure
-	 * the starting value is cleared. */
-	TempSensorManager::Instance().ClearLocalTemperature();
-	TempSensorManager::Instance().ClearOutdoorTemperature();
-	TemperatureSensor::Instance().FullMeasurement();
+    k_timer_init(&sSensorTimer, &TempSensorManager::TimerEventHandler, nullptr);
+    k_timer_start(&sSensorTimer, K_MSEC(kSensorTimerPeriodMs), K_MSEC(kSensorTimerPeriodMs));
+    /* Workaround: Default null values are not correctly propagated from the zap file. Set it manually to make sure
+     * the starting value is cleared. */
+    TempSensorManager::Instance().ClearLocalTemperature();
+    TempSensorManager::Instance().ClearOutdoorTemperature();
+    TemperatureSensor::Instance().FullMeasurement();
 
-	return CHIP_NO_ERROR;
+    return CHIP_NO_ERROR;
 }
 
-void TempSensorManager::TimerEventHandler(k_timer *timer)
+void TempSensorManager::TimerEventHandler(k_timer* timer)
 {
-	Nrf::PostTask([] { TempSensorManager::SensorTimerEventHandler(); });
+    Nrf::PostTask([] { TempSensorManager::SensorTimerEventHandler(); });
 }
 
 /*
@@ -43,33 +43,33 @@ void TempSensorManager::TimerEventHandler(k_timer *timer)
 
 void TempSensorManager::SensorTimerEventHandler()
 {
-	TemperatureSensor::Instance().FullMeasurement();
+    TemperatureSensor::Instance().FullMeasurement();
 }
 
 void TempSensorManager::SetLocalTemperature(int16_t temperature)
 {
-	PlatformMgr().LockChipStack();
-	app::Clusters::Thermostat::Attributes::LocalTemperature::Set(kThermostatEndpoint, temperature);
-	PlatformMgr().UnlockChipStack();
+    PlatformMgr().LockChipStack();
+    app::Clusters::Thermostat::Attributes::LocalTemperature::Set(kThermostatEndpoint, temperature);
+    PlatformMgr().UnlockChipStack();
 }
 
 void TempSensorManager::ClearLocalTemperature()
 {
-	PlatformMgr().LockChipStack();
-	app::Clusters::Thermostat::Attributes::LocalTemperature::SetNull(kThermostatEndpoint);
-	PlatformMgr().UnlockChipStack();
+    PlatformMgr().LockChipStack();
+    app::Clusters::Thermostat::Attributes::LocalTemperature::SetNull(kThermostatEndpoint);
+    PlatformMgr().UnlockChipStack();
 }
 
 void TempSensorManager::SetOutdoorTemperature(int16_t temperature)
 {
-	PlatformMgr().LockChipStack();
-	app::Clusters::Thermostat::Attributes::OutdoorTemperature::Set(kThermostatEndpoint, temperature);
-	PlatformMgr().UnlockChipStack();
+    PlatformMgr().LockChipStack();
+    app::Clusters::Thermostat::Attributes::OutdoorTemperature::Set(kThermostatEndpoint, temperature);
+    PlatformMgr().UnlockChipStack();
 }
 
 void TempSensorManager::ClearOutdoorTemperature()
 {
-	PlatformMgr().LockChipStack();
-	app::Clusters::Thermostat::Attributes::OutdoorTemperature::SetNull(kThermostatEndpoint);
-	PlatformMgr().UnlockChipStack();
+    PlatformMgr().LockChipStack();
+    app::Clusters::Thermostat::Attributes::OutdoorTemperature::SetNull(kThermostatEndpoint);
+    PlatformMgr().UnlockChipStack();
 }

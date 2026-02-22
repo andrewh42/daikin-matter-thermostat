@@ -36,8 +36,7 @@ std::vector<std::byte> encode(const std::vector<std::byte>& payload)
     return frame;
 }
 
-tl::expected<std::vector<std::byte>, FrameError>
-    decode(const std::vector<std::byte>& frame)
+tl::expected<std::vector<std::byte>, FrameError> decode(const std::vector<std::byte>& frame)
 {
     if (frame.size() < 4) {
         return tl::unexpected(FrameError("frame too short"));

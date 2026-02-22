@@ -9,12 +9,12 @@
 #include <stdexcept>
 #include <vector>
 
-struct S21DataLinkError : std::runtime_error {
+struct S21DataLinkError: std::runtime_error {
     using std::runtime_error::runtime_error;
 };
 
 class S21DataLink {
-public:
+  public:
     virtual ~S21DataLink() = default;
     virtual void encodeAndTransmit(std::vector<std::byte> command) = 0;
     virtual tl::expected<std::vector<std::byte>, S21DataLinkError> receiveAndDecode() = 0;

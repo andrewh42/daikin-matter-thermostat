@@ -26,8 +26,7 @@ using namespace ::chip;
 using namespace ::chip::app;
 using namespace ::chip::DeviceLayer;
 
-namespace
-{
+namespace {
 constexpr EndpointId kThermostatEndpointId = 1;
 
 Nrf::Matter::IdentifyCluster sIdentifyCluster(kThermostatEndpointId);
@@ -39,65 +38,66 @@ const struct device* s21UartDev = DEVICE_DT_GET(DT_ALIAS(s21uart));
 
 void AppTask::ButtonEventHandler(Nrf::ButtonState state, Nrf::ButtonMask hasChanged)
 {
-	if (TEMPERATURE_BUTTON_MASK & hasChanged) {
-		TemperatureButtonAction action = (TEMPERATURE_BUTTON_MASK & state) ? TemperatureButtonAction::Pushed :
-										     TemperatureButtonAction::Released;
-		Nrf::PostTask([action] { ThermostatHandler(action); });
-	}
+    if (TEMPERATURE_BUTTON_MASK & hasChanged) {
+        TemperatureButtonAction action =
+                (TEMPERATURE_BUTTON_MASK & state) ? TemperatureButtonAction::Pushed : TemperatureButtonAction::Released;
+        Nrf::PostTask([action] { ThermostatHandler(action); });
+    }
 }
 
-void AppTask::ThermostatHandler(const TemperatureButtonAction &action)
+void AppTask::ThermostatHandler(const TemperatureButtonAction& action)
 {
-	if (action == TemperatureButtonAction::Pushed) {
-		AirConditionerManager::Instance().LogThermostatStatus();
-	}
+    if (action == TemperatureButtonAction::Pushed) {
+        AirConditionerManager::Instance().LogThermostatStatus();
+    }
 }
 
 CHIP_ERROR AppTask::Init()
 {
-	if (!device_is_ready(s21UartDev)) {
-		LOG_ERR("S21 UART device is not ready");
-		return chip::System::MapErrorZephyr(-ENODEV);;
-	}
+    if (!device_is_ready(s21UartDev)) {
+        LOG_ERR("S21 UART device is not ready");
+        return chip::System::MapErrorZephyr(-ENODEV);
+        ;
+    }
 
-	static S21DataLinkUart dataLink(s21UartDev);
-	static S21Presentation s21Presentation(dataLink);
+    static S21DataLinkUart dataLink(s21UartDev);
+    static S21Presentation s21Presentation(dataLink);
 
-	/* Initialize Matter stack */
-	ReturnErrorOnFailure(Nrf::Matter::PrepareServer(Nrf::Matter::InitData{ .mPostServerInitClbk = [] {
-		CHIP_ERROR err = TempSensorManager::Instance().Init();
-		if (err != CHIP_NO_ERROR) {
-			LOG_ERR("TempSensorManager Init fail");
-			return err;
-		}
-		err = AirConditionerManager::Instance().Init(s21Presentation);
-		if (err != CHIP_NO_ERROR) {
-			LOG_ERR("AirConditionerManager Init fail");
-		}
-		return err;
-	} }));
+    /* Initialize Matter stack */
+    ReturnErrorOnFailure(Nrf::Matter::PrepareServer(Nrf::Matter::InitData{.mPostServerInitClbk = [] {
+        CHIP_ERROR err = TempSensorManager::Instance().Init();
+        if (err != CHIP_NO_ERROR) {
+            LOG_ERR("TempSensorManager Init fail");
+            return err;
+        }
+        err = AirConditionerManager::Instance().Init(s21Presentation);
+        if (err != CHIP_NO_ERROR) {
+            LOG_ERR("AirConditionerManager Init fail");
+        }
+        return err;
+    }}));
 
-	if (!Nrf::GetBoard().Init(ButtonEventHandler)) {
-		LOG_ERR("User interface initialization failed.");
-		return CHIP_ERROR_INCORRECT_STATE;
-	}
+    if (!Nrf::GetBoard().Init(ButtonEventHandler)) {
+        LOG_ERR("User interface initialization failed.");
+        return CHIP_ERROR_INCORRECT_STATE;
+    }
 
-	/* Register Matter event handler that controls the connectivity status LED based on the captured Matter network
-	 * state. */
-	ReturnErrorOnFailure(Nrf::Matter::RegisterEventHandler(Nrf::Board::DefaultMatterEventHandler, 0));
+    /* Register Matter event handler that controls the connectivity status LED based on the captured Matter network
+     * state. */
+    ReturnErrorOnFailure(Nrf::Matter::RegisterEventHandler(Nrf::Board::DefaultMatterEventHandler, 0));
 
-	ReturnErrorOnFailure(sIdentifyCluster.Init());
+    ReturnErrorOnFailure(sIdentifyCluster.Init());
 
-	return Nrf::Matter::StartServer();
+    return Nrf::Matter::StartServer();
 }
 
 CHIP_ERROR AppTask::StartApp()
 {
-	ReturnErrorOnFailure(Init());
+    ReturnErrorOnFailure(Init());
 
-	while (true) {
-		Nrf::DispatchNextTask();
-	}
+    while (true) {
+        Nrf::DispatchNextTask();
+    }
 
-	return CHIP_NO_ERROR;
+    return CHIP_NO_ERROR;
 }

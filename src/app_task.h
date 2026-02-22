@@ -12,21 +12,24 @@
 
 struct Identify;
 
-enum class TemperatureButtonAction : uint8_t { Pushed, Released };
+enum class TemperatureButtonAction : uint8_t {
+    Pushed,
+    Released
+};
 
 class AppTask {
-public:
-	static AppTask &Instance()
-	{
-		static AppTask sAppTask;
-		return sAppTask;
-	};
+  public:
+    static AppTask& Instance()
+    {
+        static AppTask sAppTask;
+        return sAppTask;
+    };
 
-	CHIP_ERROR StartApp();
+    CHIP_ERROR StartApp();
 
-private:
-	CHIP_ERROR Init();
+  private:
+    CHIP_ERROR Init();
 
-	static void ButtonEventHandler(Nrf::ButtonState state, Nrf::ButtonMask hasChanged);
-	static void ThermostatHandler(const TemperatureButtonAction &action);
+    static void ButtonEventHandler(Nrf::ButtonState state, Nrf::ButtonMask hasChanged);
+    static void ThermostatHandler(const TemperatureButtonAction& action);
 };

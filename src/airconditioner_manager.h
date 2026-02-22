@@ -19,32 +19,32 @@ using namespace chip;
 using namespace chip::app;
 
 class AirConditionerManager {
-public:
-	static AirConditionerManager &Instance()
-	{
-		static AirConditionerManager sAirConditionerManager;
-		return sAirConditionerManager;
-	};
+  public:
+    static AirConditionerManager& Instance()
+    {
+        static AirConditionerManager sAirConditionerManager;
+        return sAirConditionerManager;
+    };
 
-	CHIP_ERROR Init(S21Presentation& s21Presentation);
-	void AttributeChangeHandler(const ConcreteAttributePath &attributePath, uint8_t *value, uint16_t size);
-	DataModel::Nullable<int16_t> GetLocalTemp();
-	DataModel::Nullable<int16_t> GetOutdoorTemp();
+    CHIP_ERROR Init(S21Presentation& s21Presentation);
+    void AttributeChangeHandler(const ConcreteAttributePath& attributePath, uint8_t* value, uint16_t size);
+    DataModel::Nullable<int16_t> GetLocalTemp();
+    DataModel::Nullable<int16_t> GetOutdoorTemp();
 
-	void LogThermostatStatus();
+    void LogThermostatStatus();
 
-private:
-	S21Presentation* mS21Presentation;
-	bool mOnOff;
-	DataModel::Nullable<int16_t> mLocalTempCelsius;
-	DataModel::Nullable<int16_t> mOutdoorTempCelsius;
-	int16_t mCoolingCelsiusSetPoint;
-	int16_t mHeatingCelsiusSetPoint;
-	Clusters::Thermostat::SystemModeEnum mThermMode;
+  private:
+    S21Presentation* mS21Presentation;
+    bool mOnOff;
+    DataModel::Nullable<int16_t> mLocalTempCelsius;
+    DataModel::Nullable<int16_t> mOutdoorTempCelsius;
+    int16_t mCoolingCelsiusSetPoint;
+    int16_t mHeatingCelsiusSetPoint;
+    Clusters::Thermostat::SystemModeEnum mThermMode;
 
-	void OnOffAttributeChangeHandler(AttributeId attributeId, uint8_t *value, uint16_t size);
-	void TemperatureAttributeChangeHandler(AttributeId attributeId, uint8_t *value, uint16_t size);
-	CHIP_ERROR InitLed();
-	const char* GetThermModeStr();
-	void UpdatePowerIndicator();
+    void OnOffAttributeChangeHandler(AttributeId attributeId, uint8_t* value, uint16_t size);
+    void TemperatureAttributeChangeHandler(AttributeId attributeId, uint8_t* value, uint16_t size);
+    CHIP_ERROR InitLed();
+    const char* GetThermModeStr();
+    void UpdatePowerIndicator();
 };

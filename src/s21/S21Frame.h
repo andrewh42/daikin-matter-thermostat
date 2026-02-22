@@ -12,7 +12,7 @@
 
 namespace S21Frame {
 
-struct FrameError : std::runtime_error {
+struct FrameError: std::runtime_error {
     using std::runtime_error::runtime_error;
 };
 
@@ -30,8 +30,6 @@ std::vector<std::byte> encode(const std::vector<std::byte>& payload);
  *
  * Returns the payload on success, or a FrameError describing the problem.
  */
-[[nodiscard]]
-tl::expected<std::vector<std::byte>, FrameError>
-    decode(const std::vector<std::byte>& frame);
+[[nodiscard]] tl::expected<std::vector<std::byte>, FrameError> decode(const std::vector<std::byte>& frame);
 
 } // namespace S21Frame

@@ -4,7 +4,8 @@
 
 #include "S21DataLinkUart.h"
 
-void S21DataLinkUart::encodeAndTransmit(std::vector<std::byte> command) {
+void S21DataLinkUart::encodeAndTransmit(std::vector<std::byte> command)
+{
 }
 
 tl::expected<std::vector<std::byte>, S21DataLinkError> S21DataLinkUart::receiveAndDecode()

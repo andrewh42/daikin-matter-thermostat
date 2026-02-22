@@ -21,8 +21,7 @@ using namespace ::chip::app;
 
 LOG_MODULE_DECLARE(app, CONFIG_CHIP_APP_LOG_LEVEL);
 
-namespace
-{
+namespace {
 
 constexpr chip::EndpointId mTemperatureMeasurementEndpointId = 1;
 constexpr int16_t startingMockedValue = 1600;
@@ -30,96 +29,96 @@ constexpr int16_t startingMockedValue = 1600;
 constexpr uint16_t kSimulatedReadingFrequency = (60000 / kSensorTimerPeriodMs); /*Change simulated number every minute*/
 
 #if CONFIG_THERMOSTAT_TEMPERATURE_STEP == 0
-constexpr int16_t sMockTemp[] = { 2000, 2731, 1600, 2100, 1937, 3011, 1500, 1899 };
+constexpr int16_t sMockTemp[] = {2000, 2731, 1600, 2100, 1937, 3011, 1500, 1899};
 #endif
 
 } /* namespace */
 
 TemperatureSensor::TemperatureSensor()
 {
-	mCycleCounter = 0;
-	mMockTempIndex = 0;
-	mPreviousTemperature = startingMockedValue;
-	BindingHandler::Init();
+    mCycleCounter = 0;
+    mMockTempIndex = 0;
+    mPreviousTemperature = startingMockedValue;
+    BindingHandler::Init();
 }
 
 void TemperatureSensor::FullMeasurement()
 {
-	InternalMeasurement();
-	ExternalMeasurement();
+    InternalMeasurement();
+    ExternalMeasurement();
 }
 
 void TemperatureSensor::InternalMeasurement()
 {
-	int16_t temperature;
+    int16_t temperature;
 #if CONFIG_THERMOSTAT_TEMPERATURE_STEP == 0
 
-	temperature = sMockTemp[mMockTempIndex];
+    temperature = sMockTemp[mMockTempIndex];
 
-	mCycleCounter++;
-	if (mCycleCounter >= kSimulatedReadingFrequency) {
-		if (mMockTempIndex >= MATTER_ARRAY_SIZE(sMockTemp) - 1) {
-			mMockTempIndex = 0;
-		} else {
-			mMockTempIndex++;
-		}
-		mCycleCounter = 0;
-	}
+    mCycleCounter++;
+    if (mCycleCounter >= kSimulatedReadingFrequency) {
+        if (mMockTempIndex >= MATTER_ARRAY_SIZE(sMockTemp) - 1) {
+            mMockTempIndex = 0;
+        }
+        else {
+            mMockTempIndex++;
+        }
+        mCycleCounter = 0;
+    }
 #else
-	int16_t nextValue = mPreviousTemperature + CONFIG_THERMOSTAT_TEMPERATURE_STEP;
+    int16_t nextValue = mPreviousTemperature + CONFIG_THERMOSTAT_TEMPERATURE_STEP;
 #if CONFIG_THERMOSTAT_TEMPERATURE_STEP > 0
-	temperature = (nextValue >= CONFIG_THERMOSTAT_SIMULATED_TEMPERATURE_MAX) ?
-			      CONFIG_THERMOSTAT_SIMULATED_TEMPERATURE_MIN :
-			      nextValue;
+    temperature = (nextValue >= CONFIG_THERMOSTAT_SIMULATED_TEMPERATURE_MAX)
+                          ? CONFIG_THERMOSTAT_SIMULATED_TEMPERATURE_MIN
+                          : nextValue;
 #elif CONFIG_THERMOSTAT_TEMPERATURE_STEP < 0
-	temperature = (nextValue <= CONFIG_THERMOSTAT_SIMULATED_TEMPERATURE_MIN) ?
-			      CONFIG_THERMOSTAT_SIMULATED_TEMPERATURE_MAX :
-			      nextValue;
+    temperature = (nextValue <= CONFIG_THERMOSTAT_SIMULATED_TEMPERATURE_MIN)
+                          ? CONFIG_THERMOSTAT_SIMULATED_TEMPERATURE_MAX
+                          : nextValue;
 #endif
 #endif
 
-	mPreviousTemperature = temperature;
+    mPreviousTemperature = temperature;
 
-	TempSensorManager::Instance().SetLocalTemperature(temperature);
+    TempSensorManager::Instance().SetLocalTemperature(temperature);
 }
 
 void TemperatureSensor::ExternalMeasurement()
 {
-	Nrf::Matter::BindingHandler::BindingData *data = Platform::New<Nrf::Matter::BindingHandler::BindingData>();
-	if (data) {
-		data->ClusterId = Clusters::TemperatureMeasurement::Id;
-		data->EndpointId = mTemperatureMeasurementEndpointId;
-		data->InvokeCommandFunc = ExternalTemperatureMeasurementReadHandler;
-		BindingHandler::RunBoundClusterAction(data);
-	}
+    Nrf::Matter::BindingHandler::BindingData* data = Platform::New<Nrf::Matter::BindingHandler::BindingData>();
+    if (data) {
+        data->ClusterId = Clusters::TemperatureMeasurement::Id;
+        data->EndpointId = mTemperatureMeasurementEndpointId;
+        data->InvokeCommandFunc = ExternalTemperatureMeasurementReadHandler;
+        BindingHandler::RunBoundClusterAction(data);
+    }
 }
 
 void TemperatureSensor::ExternalTemperatureMeasurementReadHandler(
-	const chip::app::Clusters::Binding::TableEntry &binding, OperationalDeviceProxy *deviceProxy,
-	Nrf::Matter::BindingHandler::BindingData &bindingData)
+        const chip::app::Clusters::Binding::TableEntry& binding, OperationalDeviceProxy* deviceProxy,
+        Nrf::Matter::BindingHandler::BindingData& bindingData)
 {
-	auto onSuccess = [dataPointer = Platform::New<Nrf::Matter::BindingHandler::BindingData>(bindingData)](
-				 const ConcreteDataAttributePath &attributePath, const auto &dataResponse) {
-		ChipLogProgress(NotSpecified, "Read Temperature Sensor attribute succeeded");
+    auto onSuccess = [dataPointer = Platform::New<Nrf::Matter::BindingHandler::BindingData>(bindingData)](
+                             const ConcreteDataAttributePath& attributePath, const auto& dataResponse) {
+        ChipLogProgress(NotSpecified, "Read Temperature Sensor attribute succeeded");
 
-		VerifyOrReturn(!(dataResponse.IsNull()), LOG_ERR("Device invalid");
-			       Platform::Delete<Nrf::Matter::BindingHandler::BindingData>(dataPointer););
+        VerifyOrReturn(!(dataResponse.IsNull()), LOG_ERR("Device invalid");
+                       Platform::Delete<Nrf::Matter::BindingHandler::BindingData>(dataPointer););
 
-		int16_t responseValue = dataResponse.Value();
+        int16_t responseValue = dataResponse.Value();
 
-		TempSensorManager::Instance().SetOutdoorTemperature(responseValue);
-		BindingHandler::OnInvokeCommandSucces(dataPointer);
-	};
+        TempSensorManager::Instance().SetOutdoorTemperature(responseValue);
+        BindingHandler::OnInvokeCommandSucces(dataPointer);
+    };
 
-	auto onFailure = [](const ConcreteDataAttributePath *attributePath, CHIP_ERROR error) {
-		ChipLogError(NotSpecified, "Read Temperature Sensor attribute failed: %" CHIP_ERROR_FORMAT,
-			     error.Format());
-		TempSensorManager::Instance().ClearOutdoorTemperature();
-	};
+    auto onFailure = [](const ConcreteDataAttributePath* attributePath, CHIP_ERROR error) {
+        ChipLogError(NotSpecified, "Read Temperature Sensor attribute failed: %" CHIP_ERROR_FORMAT, error.Format());
+        TempSensorManager::Instance().ClearOutdoorTemperature();
+    };
 
-	VerifyOrReturn(deviceProxy != nullptr && deviceProxy->ConnectionReady(), LOG_ERR("Device invalid"));
+    VerifyOrReturn(deviceProxy != nullptr && deviceProxy->ConnectionReady(), LOG_ERR("Device invalid"));
 
-	Controller::ReadAttribute<Clusters::TemperatureMeasurement::Attributes::MeasuredValue::TypeInfo>(
-		deviceProxy->GetExchangeManager(), deviceProxy->GetSecureSession().Value(), binding.remote, onSuccess,
-		onFailure);
+    Controller::ReadAttribute<Clusters::TemperatureMeasurement::Attributes::MeasuredValue::TypeInfo>(
+            deviceProxy->GetExchangeManager(), deviceProxy->GetSecureSession().Value(), binding.remote, onSuccess,
+            onFailure);
 }

@@ -20,22 +20,23 @@ using namespace chip;
 using namespace chip::app::Clusters;
 using namespace ::chip::app::Clusters::OnOff;
 
-void MatterPostAttributeChangeCallback(const chip::app::ConcreteAttributePath &attributePath, uint8_t type,
-				       uint16_t size, uint8_t *value)
+void MatterPostAttributeChangeCallback(const chip::app::ConcreteAttributePath& attributePath, uint8_t type,
+                                       uint16_t size, uint8_t* value)
 {
-	ClusterId clusterId = attributePath.mClusterId;
-	AttributeId attributeId = attributePath.mAttributeId;
-	ChipLogProgress(Zcl, "Cluster callback: " ChipLogFormatMEI, ChipLogValueMEI(clusterId));
+    ClusterId clusterId = attributePath.mClusterId;
+    AttributeId attributeId = attributePath.mAttributeId;
+    ChipLogProgress(Zcl, "Cluster callback: " ChipLogFormatMEI, ChipLogValueMEI(clusterId));
 
-	if (clusterId == Identify::Id) {
-		ChipLogProgress(Zcl, "Identify attribute ID: " ChipLogFormatMEI " Type: %u Value: %u, length %u",
-				ChipLogValueMEI(attributeId), type, *value, size);
-	} else {
-		AirConditionerManager::Instance().AttributeChangeHandler(attributePath, value, size);
-	}
+    if (clusterId == Identify::Id) {
+        ChipLogProgress(Zcl, "Identify attribute ID: " ChipLogFormatMEI " Type: %u Value: %u, length %u",
+                        ChipLogValueMEI(attributeId), type, *value, size);
+    }
+    else {
+        AirConditionerManager::Instance().AttributeChangeHandler(attributePath, value, size);
+    }
 }
 
 void emberAfOnOffClusterInitCallback(EndpointId endpoint)
 {
-	ChipLogProgress(Zcl, "OnOff cluster init callback for endpoint %u", endpoint);
+    ChipLogProgress(Zcl, "OnOff cluster init callback for endpoint %u", endpoint);
 }
