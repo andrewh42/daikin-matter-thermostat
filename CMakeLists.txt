@@ -26,6 +26,7 @@ ncs_get_zap_parent_dir(ZAP_PARENT_DIR)
 
 target_include_directories(app PRIVATE
   src
+  third_party
   ${ZAP_PARENT_DIR}
 )
 
@@ -34,6 +35,7 @@ target_sources(app PRIVATE
   src/app_task.cpp
   src/main.cpp
   src/s21/S21DataLinkUart.cpp
+  src/s21/S21Frame.cpp
   src/s21/S21Presentation.cpp
   src/temp_sensor_manager.cpp
   src/temperature_measurement/sensor.cpp

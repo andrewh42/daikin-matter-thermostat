@@ -11,7 +11,7 @@ public:
     S21DataLinkUart(const struct device* uartDev) : m_uartDev(uartDev) {};
 
     void encodeAndTransmit(std::vector<std::byte> command) override;
-    std::vector<std::byte> receiveAndDecode() override;
+    tl::expected<std::vector<std::byte>, S21DataLinkError> receiveAndDecode() override;
 
 private:
     const struct device* m_uartDev;

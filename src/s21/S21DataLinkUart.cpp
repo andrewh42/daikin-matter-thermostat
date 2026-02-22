@@ -7,5 +7,7 @@
 void S21DataLinkUart::encodeAndTransmit(std::vector<std::byte> command) {
 }
 
-std::vector<std::byte> S21DataLinkUart::receiveAndDecode() {
+tl::expected<std::vector<std::byte>, S21DataLinkError> S21DataLinkUart::receiveAndDecode()
+{
+    return tl::unexpected(S21DataLinkError("not implemented"));
 }
