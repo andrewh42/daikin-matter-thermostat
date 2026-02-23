@@ -9,7 +9,7 @@
 #include <stdint.h>
 #include <tuple>
 
-enum class OperatingMode {
+enum class OperatingMode: uint8_t {
     Auto_Cooling = '0', // 0x30
     Auto = '1',         // 0x31
     Dry = '2',          // 0x32
@@ -19,7 +19,7 @@ enum class OperatingMode {
     Auto_Heating = '7', // 0x37
 };
 
-enum class FanMode {
+enum class FanMode: uint8_t {
     Low = '3',     // 0x33
     MidLow = '4',  // 0x34
     Medium = '5',  // 0x35
@@ -35,8 +35,7 @@ enum class FanMode {
  */
 class S21Presentation {
   public:
-    S21Presentation(S21DataLink& dataLink)
-            : m_dataLink(dataLink) {};
+    S21Presentation(S21DataLink& dataLink): m_dataLink(dataLink) {};
     ~S21Presentation();
 
     /// @brief Sets the operation mode.
@@ -48,6 +47,8 @@ class S21Presentation {
     /// @return 0 on success, negative error code on failure.
     int setOperation(bool onOff, OperatingMode mode, int16_t setPoint, FanMode fanMode);
 
+    /// @brief Gets the current operation mode.
+    /// @return On success, a tuple of (onOff, mode, setPoint, fanMode). On failure, an S21DataLinkError.
     tl::expected<std::tuple<bool, OperatingMode, int16_t, FanMode>, S21DataLinkError> getOperation();
 
   private:

@@ -4,7 +4,7 @@
 
 #include "S21DataLinkUart.h"
 
-void S21DataLinkUart::encodeAndTransmit(std::vector<std::byte> command)
+void S21DataLinkUart::encodeAndTransmit(std::vector<std::byte> payload)
 {
 }
 
