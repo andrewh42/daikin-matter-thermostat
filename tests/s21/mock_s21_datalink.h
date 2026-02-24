@@ -14,6 +14,9 @@ public:
     std::vector<std::byte> nextResponse;
     std::optional<S21DataLinkError> nextError;
 
+    void send(std::vector<std::byte>, SendCallback) override {}
+    void transact(std::vector<std::byte>, TransactCallback) override {}
+
     void encodeAndTransmit(std::vector<std::byte> command) override
     {
         lastTransmitted = std::move(command);

@@ -35,12 +35,15 @@
 	/delete-property/ hw-flow-control; /* TODO: re-enable HWFC once it's fixed */
 };
 
+/* S21 UART — managed directly via nrfx (not the Zephyr serial driver).
+ * Pin mux and baud rate are configured in S21DataLinkUart::init().
+ * Keep status = "reserved" so DT macros (DT_ALIAS, DT_IRQ) still work. */
 &uart21 {
-	status = "okay";
+	status = "reserved";
 	current-speed = <2400>;
 	parity = "even";
 	stop-bits = "2";
-	/delete-property/ hw-flow-control; /* TODO: re-enable HWFC once it's fixed */
+	/delete-property/ hw-flow-control;
 };
 
 &wdt31 {

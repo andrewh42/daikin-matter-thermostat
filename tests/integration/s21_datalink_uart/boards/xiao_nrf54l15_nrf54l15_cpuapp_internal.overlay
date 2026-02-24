@@ -1,0 +1,46 @@
+/*
+ * SPDX-License-Identifier: LicenseRef-Apache-2.0
+ *
+ * Integration test overlay for S21DataLinkUart loopback.
+ * Requires a physical wire from uart21 TX (P2.08) to RX (P2.07).
+ */
+
+/ {
+	chosen {
+		zephyr,flash-controller = &rram_controller;
+		zephyr,boot-mode = &boot_mode0;
+	};
+
+	aliases {
+		s21uart = &uart21;
+	};
+};
+
+/* S21 UART — managed directly via nrfx (not the Zephyr serial driver). */
+&uart21 {
+	status = "reserved";
+	current-speed = <2400>;
+	parity = "even";
+	stop-bits = "2";
+	/delete-property/ hw-flow-control;
+};
+
+/* restore full RRAM and SRAM space */
+&cpuapp_rram {
+	reg = <0x0 DT_SIZE_K(1524)>;
+};
+
+&cpuapp_sram {
+	reg = <0x20000000 DT_SIZE_K(256)>;
+	ranges = <0x0 0x20000000 0x40000>;
+};
+
+&gpregret1 {
+	status = "okay";
+
+	boot_mode0: boot_mode@0 {
+		compatible = "zephyr,retention";
+		status = "okay";
+		reg = <0x0 0x1>;
+	};
+};

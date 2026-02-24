@@ -74,6 +74,36 @@ Remove the `-DEXTRA_CONF_FILE=prj_release.conf` from the end of the `west build`
 to create debug builds to play around with.
 
 
+## Testing
+
+### Unit tests
+
+Unit tests run on the host and do not require any hardware. They use [Catch2](https://github.com/catchorg/Catch2) and are built with CMake.
+
+```sh
+cmake -S tests -B build-tests
+cmake --build build-tests
+ctest --test-dir build-tests
+```
+
+### Integration tests
+
+Integration tests run on the Seeed XIAO nRF54L15 and require a loopback wire connecting the S21 UART TX pin to the RX pin.
+
+Build:
+```sh
+west build -p -d build-integration-s21uart \
+  -b xiao_nrf54l15/nrf54l15/cpuapp \
+  tests/integration/s21_datalink_uart \
+  -- -DFILE_SUFFIX=internal -DCONFIG_NRFX_GPPI=y -DCONFIG_DYNAMIC_INTERRUPTS=y
+```
+
+Flash and observe test results over the serial console:
+```sh
+west flash -d build-integration-s21uart
+```
+
+
 ## Using
 
 Details for adding the device to your Matter controller (e.g. Apple Home) are contained in the build

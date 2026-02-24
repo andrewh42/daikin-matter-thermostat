@@ -10,6 +10,7 @@
 #include "airconditioner_manager.h"
 #include "s21/S21DataLinkUart.h"
 #include "s21/S21Presentation.h"
+#include "s21/s21_pinconfig.h"
 
 #include "app/matter_init.h"
 #include "app/task_executor.h"
@@ -33,7 +34,6 @@ Nrf::Matter::IdentifyCluster sIdentifyCluster(kThermostatEndpointId);
 
 #define TEMPERATURE_BUTTON_MASK DK_BTN2_MSK
 
-const struct device* s21UartDev = DEVICE_DT_GET(DT_ALIAS(s21uart));
 } /* namespace */
 
 void AppTask::ButtonEventHandler(Nrf::ButtonState state, Nrf::ButtonMask hasChanged)
@@ -54,13 +54,13 @@ void AppTask::ThermostatHandler(const TemperatureButtonAction& action)
 
 CHIP_ERROR AppTask::Init()
 {
-    if (!device_is_ready(s21UartDev)) {
-        LOG_ERR("S21 UART device is not ready");
-        return chip::System::MapErrorZephyr(-ENODEV);
-        ;
+    static S21DataLinkUart dataLink(NRF_UARTE21);
+    int err = dataLink.init(s21_pinconfig::kTxPin, s21_pinconfig::kRxPin);
+    if (err) {
+        LOG_ERR("S21DataLinkUart init failed: %d", err);
+        return chip::System::MapErrorZephyr(err);
     }
 
-    static S21DataLinkUart dataLink(s21UartDev);
     static S21Presentation s21Presentation(dataLink);
 
     /* Initialize Matter stack */

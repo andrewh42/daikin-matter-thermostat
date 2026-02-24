@@ -1,0 +1,11 @@
+tests:
+  integration.s21_datalink_uart:
+    tags: s21 uart integration
+    platform_allow:
+      - xiao_nrf54l15/nrf54l15/cpuapp
+    harness: ztest
+    extra_args:
+      - FILE_SUFFIX=internal
+    extra_configs:
+      - CONFIG_NRFX_GPPI=y
+      - CONFIG_DYNAMIC_INTERRUPTS=y
