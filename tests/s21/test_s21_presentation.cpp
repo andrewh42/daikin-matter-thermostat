@@ -23,12 +23,15 @@ TEST_CASE("S21Presentation setOperation on/Cool/22°C/Auto sends D1 payload", "[
     // Power=On('1'=0x31), Mode=Cool('3'=0x33),
     // Temp: 22.00°C → '@'(0x40) + (22-18)*2 = 0x48 ('H')
     // Fan: Auto → 'A'(0x41)
-    // Expected payload to encodeAndTransmit: 44 31 31 33 48 41
+    // Expected payload to send: 44 31 31 33 48 41
     MockS21DataLink mock;
     S21Presentation pres(mock);
 
-    pres.setOperation(true, OperatingMode::Cool, 2200, FanMode::Auto);
+    tl::expected<void, S21DataLinkError> result;
+    pres.setOperation(true, OperatingMode::Cool, 2200, FanMode::Auto,
+                      [&](auto r) { result = r; });
 
+    REQUIRE(result.has_value());
     REQUIRE(mock.lastTransmitted == bytes(0x44, 0x31, 0x31, 0x33, 0x48, 0x41));
 }
 
@@ -37,12 +40,15 @@ TEST_CASE("S21Presentation setOperation off/Heat/25°C/Low sends D1 payload", "[
     // Power=Off('0'=0x30), Mode=Heat('4'=0x34),
     // Temp: 25.00°C → '@'(0x40) + (25-18)*2 = 0x4E ('N')
     // Fan: Low → '3'(0x33)
-    // Expected payload to encodeAndTransmit: 44 31 30 34 4E 33
+    // Expected payload to send: 44 31 30 34 4E 33
     MockS21DataLink mock;
     S21Presentation pres(mock);
 
-    pres.setOperation(false, OperatingMode::Heat, 2500, FanMode::Low);
+    tl::expected<void, S21DataLinkError> result;
+    pres.setOperation(false, OperatingMode::Heat, 2500, FanMode::Low,
+                      [&](auto r) { result = r; });
 
+    REQUIRE(result.has_value());
     REQUIRE(mock.lastTransmitted == bytes(0x44, 0x31, 0x30, 0x34, 0x4E, 0x33));
 }
 
@@ -54,9 +60,11 @@ TEST_CASE("S21Presentation setOperation on/Cool/16°C/Auto sends D1 payload", "[
     MockS21DataLink mock;
     S21Presentation pres(mock);
 
-    int rc = pres.setOperation(true, OperatingMode::Cool, 1600, FanMode::Auto);
+    tl::expected<void, S21DataLinkError> result;
+    pres.setOperation(true, OperatingMode::Cool, 1600, FanMode::Auto,
+                      [&](auto r) { result = r; });
 
-    REQUIRE(rc == 0);
+    REQUIRE(result.has_value());
     REQUIRE(mock.lastTransmitted == bytes(0x44, 0x31, 0x31, 0x33, 0x3C, 0x41));
 }
 
@@ -65,9 +73,11 @@ TEST_CASE("S21Presentation setOperation rejects setPoint below 10°C", "[s21pres
     MockS21DataLink mock;
     S21Presentation pres(mock);
 
-    int rc = pres.setOperation(true, OperatingMode::Cool, 500, FanMode::Auto);
+    tl::expected<void, S21DataLinkError> result;
+    pres.setOperation(true, OperatingMode::Cool, 500, FanMode::Auto,
+                      [&](auto r) { result = r; });
 
-    REQUIRE(rc < 0);
+    REQUIRE_FALSE(result.has_value());
     REQUIRE(mock.lastTransmitted.empty());
 }
 
@@ -76,9 +86,11 @@ TEST_CASE("S21Presentation setOperation rejects setPoint above 32°C", "[s21pres
     MockS21DataLink mock;
     S21Presentation pres(mock);
 
-    int rc = pres.setOperation(true, OperatingMode::Cool, 3500, FanMode::Auto);
+    tl::expected<void, S21DataLinkError> result;
+    pres.setOperation(true, OperatingMode::Cool, 3500, FanMode::Auto,
+                      [&](auto r) { result = r; });
 
-    REQUIRE(rc < 0);
+    REQUIRE_FALSE(result.has_value());
     REQUIRE(mock.lastTransmitted.empty());
 }
 
@@ -91,7 +103,7 @@ TEST_CASE("S21Presentation getOperation sends F1 poll payload", "[s21pres][getOp
     S21Presentation pres(mock);
 
     mock.nextResponse = bytes(0x47, 0x31, 0x31, 0x33, 0x48, 0x41); // G1 response
-    auto result = pres.getOperation();
+    pres.getOperation([](auto) {});
 
     REQUIRE(mock.lastTransmitted == bytes(0x46, 0x31));
 }
@@ -104,7 +116,10 @@ TEST_CASE("S21Presentation getOperation parses G1 on/Cool/22°C/Auto", "[s21pres
     S21Presentation pres(mock);
 
     mock.nextResponse = bytes(0x47, 0x31, 0x31, 0x33, 0x48, 0x41);
-    auto result = pres.getOperation();
+
+    tl::expected<S21Presentation::GetOperationResult, S21DataLinkError> result;
+    pres.getOperation([&](auto r) { result = r; });
+
     REQUIRE(result.has_value());
     auto [onOff, mode, setPoint, fanMode] = result.value();
 
@@ -122,7 +137,10 @@ TEST_CASE("S21Presentation getOperation parses G1 off/Heat/25°C/Quiet", "[s21pr
     S21Presentation pres(mock);
 
     mock.nextResponse = bytes(0x47, 0x31, 0x30, 0x34, 0x4E, 0x42);
-    auto result = pres.getOperation();
+
+    tl::expected<S21Presentation::GetOperationResult, S21DataLinkError> result;
+    pres.getOperation([&](auto r) { result = r; });
+
     REQUIRE(result.has_value());
     auto [onOff, mode, setPoint, fanMode] = result.value();
 
@@ -132,13 +150,14 @@ TEST_CASE("S21Presentation getOperation parses G1 off/Heat/25°C/Quiet", "[s21pr
     REQUIRE(fanMode == FanMode::Quiet);
 }
 
-TEST_CASE("S21Presentation getOperation propagates receiveAndDecode error", "[s21pres][getOp]")
+TEST_CASE("S21Presentation getOperation propagates transact error", "[s21pres][getOp]")
 {
     MockS21DataLink mock;
     S21Presentation pres(mock);
     mock.nextError = S21DataLinkError("timeout");
 
-    auto result = pres.getOperation();
+    tl::expected<S21Presentation::GetOperationResult, S21DataLinkError> result;
+    pres.getOperation([&](auto r) { result = r; });
 
     REQUIRE_FALSE(result.has_value());
     REQUIRE(std::string_view(result.error().what()) == "timeout");

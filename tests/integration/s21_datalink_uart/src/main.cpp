@@ -268,4 +268,7 @@ ZTEST(s21_datalink_uart, test_dppi_endtx_startrx)
         zassert_true(strcmp(s_transactErrMsg, "timeout") != 0,
                      "got timeout — DPPI ENDTX→STARTRX chain may be broken");
     }
+    else {
+        zassert_true(false);
+    }
 }

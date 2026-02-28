@@ -22,10 +22,12 @@ static int16_t tempByteToSetPoint(uint8_t tempByte)
     return static_cast<int16_t>((tempByte - static_cast<uint8_t>('@')) * 50 + 1800);
 }
 
-int S21Presentation::setOperation(bool onOff, OperatingMode mode, int16_t setPoint, FanMode fanMode)
+void S21Presentation::setOperation(bool onOff, OperatingMode mode, int16_t setPoint, FanMode fanMode,
+                                   SetOperationCallback cb)
 {
     if (setPoint < 1000 || setPoint > 3200) {
-        return -EINVAL;
+        cb(tl::unexpected(S21DataLinkError("setPoint out of range")));
+        return;
     }
 
     uint8_t power = onOff ? '1' : '0';
@@ -33,31 +35,32 @@ int S21Presentation::setOperation(bool onOff, OperatingMode mode, int16_t setPoi
     uint8_t tempByte = setPointToTempByte(setPoint);
     uint8_t fanByte = static_cast<uint8_t>(fanMode);
 
-    m_dataLink.encodeAndTransmit({
-            std::byte{'D'},
-            std::byte{'1'},
-            std::byte{power},
-            std::byte{modeByte},
-            std::byte{tempByte},
-            std::byte{fanByte},
-    });
-
-    return 0;
+    m_dataLink.send(
+            {
+                    std::byte{'D'},
+                    std::byte{'1'},
+                    std::byte{power},
+                    std::byte{modeByte},
+                    std::byte{tempByte},
+                    std::byte{fanByte},
+            },
+            std::move(cb));
 }
 
-tl::expected<std::tuple<bool, OperatingMode, int16_t, FanMode>, S21DataLinkError> S21Presentation::getOperation()
+void S21Presentation::getOperation(GetOperationCallback cb)
 {
-    m_dataLink.encodeAndTransmit({std::byte{'F'}, std::byte{'1'}});
+    m_dataLink.transact({std::byte{'F'}, std::byte{'1'}},
+                        [cb = std::move(cb)](tl::expected<std::vector<std::byte>, S21DataLinkError> response) {
+                            if (!response) {
+                                cb(tl::unexpected(response.error()));
+                                return;
+                            }
 
-    auto response = m_dataLink.receiveAndDecode();
-    if (!response) {
-        return tl::unexpected(response.error());
-    }
+                            bool onOff = (*response)[2] != std::byte{'0'};
+                            auto mode = static_cast<OperatingMode>(static_cast<uint8_t>((*response)[3]));
+                            int16_t setPoint = tempByteToSetPoint(static_cast<uint8_t>((*response)[4]));
+                            FanMode fanMode = static_cast<FanMode>(static_cast<uint8_t>((*response)[5]));
 
-    bool onOff = (*response)[2] != std::byte{'0'};
-    auto mode = static_cast<OperatingMode>(static_cast<uint8_t>((*response)[3]));
-    int16_t setPoint = tempByteToSetPoint(static_cast<uint8_t>((*response)[4]));
-    FanMode fanMode = static_cast<FanMode>(static_cast<uint8_t>((*response)[5]));
-
-    return std::make_tuple(onOff, mode, setPoint, fanMode);
+                            cb(std::make_tuple(onOff, mode, setPoint, fanMode));
+                        });
 }

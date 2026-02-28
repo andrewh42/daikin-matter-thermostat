@@ -8,9 +8,7 @@
 
 #include "temp_sensor_manager.h"
 #include "airconditioner_manager.h"
-#include "s21/S21DataLinkUart.h"
-#include "s21/S21Presentation.h"
-#include "s21/s21_pinconfig.h"
+#include "s21/S21Stack.h"
 
 #include "app/matter_init.h"
 #include "app/task_executor.h"
@@ -54,14 +52,11 @@ void AppTask::ThermostatHandler(const TemperatureButtonAction& action)
 
 CHIP_ERROR AppTask::Init()
 {
-    static S21DataLinkUart dataLink(NRF_UARTE21);
-    int err = dataLink.init(s21_pinconfig::kTxPin, s21_pinconfig::kRxPin);
+    int err = S21Stack::Instance().Init();
     if (err) {
-        LOG_ERR("S21DataLinkUart init failed: %d", err);
+        LOG_ERR("S21Stack initialization failed: %d", err);
         return chip::System::MapErrorZephyr(err);
     }
-
-    static S21Presentation s21Presentation(dataLink);
 
     /* Initialize Matter stack */
     ReturnErrorOnFailure(Nrf::Matter::PrepareServer(Nrf::Matter::InitData{.mPostServerInitClbk = [] {
@@ -70,7 +65,8 @@ CHIP_ERROR AppTask::Init()
             LOG_ERR("TempSensorManager Init fail");
             return err;
         }
-        err = AirConditionerManager::Instance().Init(s21Presentation);
+
+        err = AirConditionerManager::Instance().Init(S21Stack::Instance().GetPresentation());
         if (err != CHIP_NO_ERROR) {
             LOG_ERR("AirConditionerManager Init fail");
         }

@@ -100,23 +100,18 @@ int S21DataLinkUart::init(uint32_t txPin, uint32_t rxPin)
 
     /* --- Channel B: MATCH[0..2] → STOPRX -------------------------- */
     /* MATCH events have no HAL enum — set publish registers directly. */
-    m_uarte->PUBLISH_DMA.RX.MATCH[kMatchIdxETX] =
-            m_dppiChMatch | NRF_SUBSCRIBE_PUBLISH_ENABLE;
-    m_uarte->PUBLISH_DMA.RX.MATCH[kMatchIdxACK] =
-            m_dppiChMatch | NRF_SUBSCRIBE_PUBLISH_ENABLE;
-    m_uarte->PUBLISH_DMA.RX.MATCH[kMatchIdxNAK] =
-            m_dppiChMatch | NRF_SUBSCRIBE_PUBLISH_ENABLE;
+    m_uarte->PUBLISH_DMA.RX.MATCH[kMatchIdxETX] = m_dppiChMatch | NRF_SUBSCRIBE_PUBLISH_ENABLE;
+    m_uarte->PUBLISH_DMA.RX.MATCH[kMatchIdxACK] = m_dppiChMatch | NRF_SUBSCRIBE_PUBLISH_ENABLE;
+    m_uarte->PUBLISH_DMA.RX.MATCH[kMatchIdxNAK] = m_dppiChMatch | NRF_SUBSCRIBE_PUBLISH_ENABLE;
     nrf_uarte_subscribe_set(m_uarte, NRF_UARTE_TASK_STOPRX, m_dppiChMatch);
     nrfx_gppi_channels_enable(domain_id, BIT(m_dppiChMatch));
 
     /* --- IRQ: ENDRX + ERROR --------------------------------------- */
     nrf_uarte_int_enable(m_uarte,
-                         NRF_UARTE_INT_ENDRX_MASK | NRF_UARTE_INT_ERROR_MASK |
-                                 NRF_UARTE_INT_FRAME_TIMEOUT_MASK);
+                         NRF_UARTE_INT_ENDRX_MASK | NRF_UARTE_INT_ERROR_MASK | NRF_UARTE_INT_FRAME_TIMEOUT_MASK);
 
     unsigned int irqn = DT_IRQ(DT_ALIAS(s21uart), irq);
-    irq_connect_dynamic(irqn, DT_IRQ(DT_ALIAS(s21uart), priority), isrHandler,
-                         reinterpret_cast<const void*>(this), 0);
+    irq_connect_dynamic(irqn, DT_IRQ(DT_ALIAS(s21uart), priority), isrHandler, reinterpret_cast<const void*>(this), 0);
     irq_enable(irqn);
 
     /* --- Enable UARTE --------------------------------------------- */
@@ -179,8 +174,7 @@ void S21DataLinkUart::transact(std::vector<std::byte> payload, TransactCallback 
  * Start a TX→RX transaction (common path)
  * ────────────────────────────────────────────────────────────────────── */
 
-void S21DataLinkUart::startTransaction(const std::vector<std::byte>& encoded, bool matchEtx,
-                                       bool matchAck)
+void S21DataLinkUart::startTransaction(const std::vector<std::byte>& encoded, bool matchEtx, bool matchAck)
 {
     /* Enable the appropriate MATCH filters (NAK always on). */
     configureMatch(matchEtx, matchAck, /*nak=*/true);
@@ -257,13 +251,17 @@ const char* S21DataLinkUart::rxResultError(RxResult& result)
 {
     if (result.status == 2) {
         return "timeout";
-    } else if (result.status != 0) {
+    }
+    else if (result.status != 0) {
         return "uart error";
-    } else if (result.len < 1) {
+    }
+    else if (result.len < 1) {
         return "no response";
-    } else if (result.data[0] == kNAK) {
+    }
+    else if (result.data[0] == kNAK) {
         return "NAK";
-    } else {
+    }
+    else {
         return nullptr;
     }
 }
@@ -299,12 +297,15 @@ void S21DataLinkUart::completionWorkHandler(struct k_work* work)
         auto resultError = rxResultError(result);
         if (resultError) {
             cb(tl::unexpected(S21DataLinkError(resultError)));
-        } else if (result.data[0] != kACK) {
+        }
+        else if (result.data[0] != kACK) {
             cb(tl::unexpected(S21DataLinkError("unexpected response")));
-        } else {
+        }
+        else {
             cb({});
         }
-    } else if (op == OpType::Transact) {
+    }
+    else if (op == OpType::Transact) {
         auto cb = std::move(self->m_transactCb);
         if (!cb) {
             return;
@@ -323,7 +324,8 @@ void S21DataLinkUart::completionWorkHandler(struct k_work* work)
         auto decoded = S21Frame::decode(frame);
         if (!decoded) {
             cb(tl::unexpected(S21DataLinkError(decoded.error().what())));
-        } else {
+        }
+        else {
             cb(std::move(*decoded));
         }
     }

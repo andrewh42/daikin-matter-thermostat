@@ -14,19 +14,23 @@ public:
     std::vector<std::byte> nextResponse;
     std::optional<S21DataLinkError> nextError;
 
-    void send(std::vector<std::byte>, SendCallback) override {}
-    void transact(std::vector<std::byte>, TransactCallback) override {}
-
-    void encodeAndTransmit(std::vector<std::byte> command) override
+    void send(std::vector<std::byte> payload, SendCallback cb) override
     {
-        lastTransmitted = std::move(command);
+        lastTransmitted = std::move(payload);
+        if (nextError) {
+            cb(tl::unexpected(*nextError));
+        } else {
+            cb({});
+        }
     }
 
-    tl::expected<std::vector<std::byte>, S21DataLinkError> receiveAndDecode() override
+    void transact(std::vector<std::byte> payload, TransactCallback cb) override
     {
+        lastTransmitted = std::move(payload);
         if (nextError) {
-            return tl::unexpected(*nextError);
+            cb(tl::unexpected(*nextError));
+        } else {
+            cb(nextResponse);
         }
-        return nextResponse;
     }
 };

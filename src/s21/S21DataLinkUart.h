@@ -36,13 +36,6 @@ class S21DataLinkUart: public S21DataLink {
     void send(std::vector<std::byte> payload, SendCallback cb) override;
     void transact(std::vector<std::byte> payload, TransactCallback cb) override;
 
-    // Deprecated overrides — stubs kept for S21Presentation compatibility.
-    void encodeAndTransmit(std::vector<std::byte>) override {}
-    tl::expected<std::vector<std::byte>, S21DataLinkError> receiveAndDecode() override
-    {
-        return tl::unexpected(S21DataLinkError("not implemented"));
-    }
-
   private:
     // ── S21 framing bytes ──
     static constexpr uint8_t kETX = 0x03;
@@ -68,7 +61,11 @@ class S21DataLinkUart: public S21DataLink {
     };
 
     // ── Operation state ──
-    enum class OpType : uint8_t { None, Send, Transact };
+    enum class OpType : uint8_t {
+        None,
+        Send,
+        Transact
+    };
 
     NRF_UARTE_Type* m_uarte;
     uint8_t m_dppiChTxRx;  // ENDTX → STARTRX

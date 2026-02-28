@@ -6,10 +6,11 @@
 
 #include "S21DataLink.h"
 
+#include <functional>
 #include <stdint.h>
 #include <tuple>
 
-enum class OperatingMode: uint8_t {
+enum class OperatingMode : uint8_t {
     Auto_Cooling = '0', // 0x30
     Auto = '1',         // 0x31
     Dry = '2',          // 0x32
@@ -19,7 +20,7 @@ enum class OperatingMode: uint8_t {
     Auto_Heating = '7', // 0x37
 };
 
-enum class FanMode: uint8_t {
+enum class FanMode : uint8_t {
     Low = '3',     // 0x33
     MidLow = '4',  // 0x34
     Medium = '5',  // 0x35
@@ -35,7 +36,12 @@ enum class FanMode: uint8_t {
  */
 class S21Presentation {
   public:
-    S21Presentation(S21DataLink& dataLink): m_dataLink(dataLink) {};
+    using GetOperationResult = std::tuple<bool, OperatingMode, int16_t, FanMode>;
+    using SetOperationCallback = std::function<void(tl::expected<void, S21DataLinkError>)>;
+    using GetOperationCallback = std::function<void(tl::expected<GetOperationResult, S21DataLinkError>)>;
+
+    S21Presentation(S21DataLink& dataLink)
+            : m_dataLink(dataLink) {};
     ~S21Presentation();
 
     /// @brief Sets the operation mode.
@@ -44,12 +50,12 @@ class S21Presentation {
     /// @param setPoint temperature set point in hundredths of Celsius degrees (e.g. 2050
     /// => 20.50°C).
     /// @param fanMode fan operating mode.
-    /// @return 0 on success, negative error code on failure.
-    int setOperation(bool onOff, OperatingMode mode, int16_t setPoint, FanMode fanMode);
+    /// @param cb callback invoked with success or error when the AC acknowledges the command.
+    void setOperation(bool onOff, OperatingMode mode, int16_t setPoint, FanMode fanMode, SetOperationCallback cb);
 
     /// @brief Gets the current operation mode.
-    /// @return On success, a tuple of (onOff, mode, setPoint, fanMode). On failure, an S21DataLinkError.
-    tl::expected<std::tuple<bool, OperatingMode, int16_t, FanMode>, S21DataLinkError> getOperation();
+    /// @param cb callback invoked with (onOff, mode, setPoint, fanMode) on success, or an error.
+    void getOperation(GetOperationCallback cb);
 
   private:
     S21DataLink& m_dataLink;

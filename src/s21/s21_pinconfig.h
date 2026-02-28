@@ -21,15 +21,13 @@
 
 /* Flatten every psels entry from every child group of the default pinctrl state. */
 #define _S21_EMIT_PSEL(node, prop, idx) DT_PROP_BY_IDX(node, prop, idx),
-#define _S21_EMIT_GROUP(node)     DT_FOREACH_PROP_ELEM(node, psels, _S21_EMIT_PSEL)
+#define _S21_EMIT_GROUP(node)           DT_FOREACH_PROP_ELEM(node, psels, _S21_EMIT_PSEL)
 
 #define _S21_PINCTRL_DEFAULT DT_PHANDLE_BY_IDX(DT_ALIAS(s21uart), pinctrl_0, 0)
 
 namespace s21_pinconfig {
 
-static constexpr uint32_t kPsels[] = {
-    DT_FOREACH_CHILD(_S21_PINCTRL_DEFAULT, _S21_EMIT_GROUP)
-};
+static constexpr uint32_t kPsels[] = {DT_FOREACH_CHILD(_S21_PINCTRL_DEFAULT, _S21_EMIT_GROUP)};
 
 static constexpr uint32_t pinForFun(uint32_t fun)
 {

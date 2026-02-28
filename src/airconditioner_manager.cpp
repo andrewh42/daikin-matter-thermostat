@@ -65,6 +65,8 @@ CHIP_ERROR AirConditionerManager::Init(S21Presentation& s21Presentation)
 exit:
     PlatformMgr().UnlockChipStack();
 
+    LOG_DBG("AirConditionerManager %s", err == CHIP_NO_ERROR ? "initialised successfully" : "initialisation FAILED");
+
     return err;
 }
 
