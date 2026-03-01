@@ -54,10 +54,16 @@ class S21DataLinkUart: public S21DataLink {
     static constexpr uint32_t kFrameTimeoutBits = 240;
 
     // ── ISR → work-queue result ──
+    enum class RxStatus : uint8_t {
+        Ok,
+        UartError,
+        Timeout,
+    };
+
     struct RxResult {
         uint8_t data[kBufSize];
         uint8_t len;
-        uint8_t status; // 0 = ok, 1 = uart error, 2 = timeout
+        RxStatus status;
     };
 
     // ── Operation state ──

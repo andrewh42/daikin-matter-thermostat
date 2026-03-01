@@ -13,11 +13,7 @@
 
 #include <cstring>
 
-LOG_MODULE_REGISTER(s21_uart, CONFIG_LOG_DEFAULT_LEVEL);
-
-/* ──────────────────────────────────────────────────────────────────────
- * Construction
- * ────────────────────────────────────────────────────────────────────── */
+LOG_MODULE_REGISTER(s21_uart, CONFIG_CHIP_APP_LOG_LEVEL);
 
 S21DataLinkUart::S21DataLinkUart(NRF_UARTE_Type* uarte)
         : m_uarte(uarte)
@@ -32,10 +28,6 @@ S21DataLinkUart::S21DataLinkUart(NRF_UARTE_Type* uarte)
         , m_rxBuf{}
 {
 }
-
-/* ──────────────────────────────────────────────────────────────────────
- * Initialisation
- * ────────────────────────────────────────────────────────────────────── */
 
 int S21DataLinkUart::init(uint32_t txPin, uint32_t rxPin)
 {
@@ -221,7 +213,7 @@ void S21DataLinkUart::isrHandler(const void* arg)
         RxResult result{};
         result.len = static_cast<uint8_t>(nrf_uarte_rx_amount_get(uarte));
         std::memcpy(result.data, self->m_rxBuf, result.len);
-        result.status = timeout ? 2 : 0;
+        result.status = timeout ? RxStatus::Timeout : RxStatus::Ok;
         k_msgq_put(&self->m_rxMsgq, &result, K_NO_WAIT);
         k_work_submit(&self->m_completionWork.work);
     }
@@ -236,7 +228,7 @@ void S21DataLinkUart::isrHandler(const void* arg)
 
         RxResult result{};
         result.len = 0;
-        result.status = 1;
+        result.status = RxStatus::UartError;
         k_msgq_put(&self->m_rxMsgq, &result, K_NO_WAIT);
         k_work_submit(&self->m_completionWork.work);
     }
@@ -249,10 +241,10 @@ void S21DataLinkUart::isrHandler(const void* arg)
 
 const char* S21DataLinkUart::rxResultError(RxResult& result)
 {
-    if (result.status == 2) {
+    if (result.status == RxStatus::Timeout) {
         return "timeout";
     }
-    else if (result.status != 0) {
+    else if (result.status != RxStatus::Ok) {
         return "uart error";
     }
     else if (result.len < 1) {
