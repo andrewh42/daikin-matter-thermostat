@@ -104,6 +104,15 @@ west flash -d build-integration-s21uart
 ```
 
 
+### Manual tests
+
+A set of `s21` shell commands allows you to interact with the S21 port.
+
+For example:
+* `s21 set_operation on heat 30 midhigh`
+* `s21 get_operation`
+
+
 ## Using
 
 Details for adding the device to your Matter controller (e.g. Apple Home) are contained in the build

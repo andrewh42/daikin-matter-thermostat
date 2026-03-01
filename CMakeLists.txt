@@ -37,6 +37,7 @@ target_sources(app PRIVATE
   src/s21/S21DataLinkUart.cpp
   src/s21/S21Frame.cpp
   src/s21/S21Presentation.cpp
+  src/s21/s21_shell.cpp
   src/s21/S21Stack.cpp
   src/temp_sensor_manager.cpp
   src/temperature_measurement/sensor.cpp
