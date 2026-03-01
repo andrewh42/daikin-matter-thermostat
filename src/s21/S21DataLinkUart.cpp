@@ -6,6 +6,7 @@
 #include "S21Frame.h"
 
 #include <hal/nrf_gpio.h>
+#include <hal/nrf_timer.h>
 #include <hal/nrf_uarte.h>
 #include <helpers/nrfx_gppi.h>
 #include <zephyr/irq.h>
@@ -17,8 +18,9 @@ LOG_MODULE_REGISTER(s21_uart, CONFIG_CHIP_APP_LOG_LEVEL);
 
 S21DataLinkUart::S21DataLinkUart(NRF_UARTE_Type* uarte)
         : m_uarte(uarte)
-        , m_dppiChTxRx(0)
-        , m_dppiChMatch(0)
+        , mGppiChTxRx(0)
+        , mGppiChMatchOrTimeout(0)
+        , mGppiChEndrxTimer(0)
         , m_rxMsgq{}
         , m_rxMsgqBuf{}
         , m_completionWork{}
@@ -75,28 +77,55 @@ int S21DataLinkUart::init(uint32_t txPin, uint32_t rxPin)
         LOG_ERR("DPPI alloc ch A failed: %d", ch);
         return ch;
     }
-    m_dppiChTxRx = static_cast<uint8_t>(ch);
+    mGppiChTxRx = static_cast<uint8_t>(ch);
 
     ch = nrfx_gppi_channel_alloc(domain_id);
     if (ch < 0) {
         LOG_ERR("DPPI alloc ch B failed: %d", ch);
-        nrfx_gppi_channel_free(domain_id, m_dppiChTxRx);
+        nrfx_gppi_channel_free(domain_id, mGppiChTxRx);
         return ch;
     }
-    m_dppiChMatch = static_cast<uint8_t>(ch);
+    mGppiChMatchOrTimeout = static_cast<uint8_t>(ch);
 
     /* --- Channel A: ENDTX → STARTRX ------------------------------- */
-    nrf_uarte_publish_set(m_uarte, NRF_UARTE_EVENT_ENDTX, m_dppiChTxRx);
-    nrf_uarte_subscribe_set(m_uarte, NRF_UARTE_TASK_STARTRX, m_dppiChTxRx);
-    nrfx_gppi_channels_enable(domain_id, BIT(m_dppiChTxRx));
+    nrf_uarte_publish_set(m_uarte, NRF_UARTE_EVENT_ENDTX, mGppiChTxRx);
+    nrf_uarte_subscribe_set(m_uarte, NRF_UARTE_TASK_STARTRX, mGppiChTxRx);
+    nrfx_gppi_channels_enable(domain_id, BIT(mGppiChTxRx));
 
     /* --- Channel B: MATCH[0..2] → STOPRX -------------------------- */
     /* MATCH events have no HAL enum — set publish registers directly. */
-    m_uarte->PUBLISH_DMA.RX.MATCH[kMatchIdxETX] = m_dppiChMatch | NRF_SUBSCRIBE_PUBLISH_ENABLE;
-    m_uarte->PUBLISH_DMA.RX.MATCH[kMatchIdxACK] = m_dppiChMatch | NRF_SUBSCRIBE_PUBLISH_ENABLE;
-    m_uarte->PUBLISH_DMA.RX.MATCH[kMatchIdxNAK] = m_dppiChMatch | NRF_SUBSCRIBE_PUBLISH_ENABLE;
-    nrf_uarte_subscribe_set(m_uarte, NRF_UARTE_TASK_STOPRX, m_dppiChMatch);
-    nrfx_gppi_channels_enable(domain_id, BIT(m_dppiChMatch));
+    m_uarte->PUBLISH_DMA.RX.MATCH[kMatchIdxETX] = mGppiChMatchOrTimeout | NRF_SUBSCRIBE_PUBLISH_ENABLE;
+    m_uarte->PUBLISH_DMA.RX.MATCH[kMatchIdxACK] = mGppiChMatchOrTimeout | NRF_SUBSCRIBE_PUBLISH_ENABLE;
+    m_uarte->PUBLISH_DMA.RX.MATCH[kMatchIdxNAK] = mGppiChMatchOrTimeout | NRF_SUBSCRIBE_PUBLISH_ENABLE;
+    nrf_uarte_subscribe_set(m_uarte, NRF_UARTE_TASK_STOPRX, mGppiChMatchOrTimeout);
+    nrfx_gppi_channels_enable(domain_id, BIT(mGppiChMatchOrTimeout));
+
+    /* --- TIMER20: one-shot 200 ms watchdog for no-response timeout -- */
+    /* Prescaler 4 → 16 MHz / 2^4 = 1 MHz → 1 µs/tick; 200 000 ticks = 200 ms. */
+    nrf_timer_mode_set(NRF_TIMER20, NRF_TIMER_MODE_TIMER);
+    nrf_timer_bit_width_set(NRF_TIMER20, NRF_TIMER_BIT_WIDTH_32);
+    nrf_timer_prescaler_set(NRF_TIMER20, 4);
+    nrf_timer_cc_set(NRF_TIMER20, NRF_TIMER_CC_CHANNEL0, 200000);
+    nrf_timer_shorts_enable(NRF_TIMER20, NRF_TIMER_SHORT_COMPARE0_STOP_MASK);
+
+    /* Ch A addition: TIMER START subscribes to ENDTX (alongside STARTRX). */
+    nrf_timer_subscribe_set(NRF_TIMER20, NRF_TIMER_TASK_START, mGppiChTxRx);
+
+    /* Ch B addition: TIMER COMPARE[0] also publishes to Ch B (→ STOPRX). */
+    nrf_timer_publish_set(NRF_TIMER20, NRF_TIMER_EVENT_COMPARE0, mGppiChMatchOrTimeout);
+
+    /* Ch C: ENDRX → TIMER STOP (cancel watchdog on normal RX completion). */
+    ch = nrfx_gppi_channel_alloc(domain_id);
+    if (ch < 0) {
+        LOG_ERR("DPPI alloc ch C failed: %d", ch);
+        nrfx_gppi_channel_free(domain_id, mGppiChTxRx);
+        nrfx_gppi_channel_free(domain_id, mGppiChMatchOrTimeout);
+        return ch;
+    }
+    mGppiChEndrxTimer = static_cast<uint8_t>(ch);
+    nrf_uarte_publish_set(m_uarte, NRF_UARTE_EVENT_ENDRX, mGppiChEndrxTimer);
+    nrf_timer_subscribe_set(NRF_TIMER20, NRF_TIMER_TASK_STOP, mGppiChEndrxTimer);
+    nrfx_gppi_channels_enable(domain_id, BIT(mGppiChEndrxTimer));
 
     /* --- IRQ: ENDRX + ERROR --------------------------------------- */
     nrf_uarte_int_enable(m_uarte,
@@ -109,7 +138,7 @@ int S21DataLinkUart::init(uint32_t txPin, uint32_t rxPin)
     /* --- Enable UARTE --------------------------------------------- */
     nrf_uarte_enable(m_uarte);
 
-    LOG_INF("S21DataLinkUart init OK (DPPI %u/%u)", m_dppiChTxRx, m_dppiChMatch);
+    LOG_INF("S21DataLinkUart init OK (DPPI %u/%u/%u)", mGppiChTxRx, mGppiChMatchOrTimeout, mGppiChEndrxTimer);
     return 0;
 }
 
@@ -189,7 +218,11 @@ void S21DataLinkUart::startTransaction(const std::vector<std::byte>& encoded, bo
     /* Clear FRAMETIMEOUT event before starting. */
     nrf_uarte_event_clear(m_uarte, NRF_UARTE_EVENT_FRAME_TIMEOUT);
 
-    /* Fire TX — DPPI will chain: ENDTX → STARTRX → MATCH → STOPRX → ENDRX. */
+    /* Reset watchdog timer so it starts from 0 when ENDTX fires (Ch A). */
+    nrf_timer_task_trigger(NRF_TIMER20, NRF_TIMER_TASK_CLEAR);
+    nrf_timer_event_clear(NRF_TIMER20, NRF_TIMER_EVENT_COMPARE0);
+
+    /* Fire TX — DPPI will chain: ENDTX → STARTRX + TIMER START → MATCH/COMPARE → STOPRX → ENDRX. */
     nrf_uarte_task_trigger(m_uarte, NRF_UARTE_TASK_STARTTX);
 }
 
@@ -226,10 +259,15 @@ void S21DataLinkUart::isrHandler(const void* arg)
     if (nrf_uarte_event_check(uarte, NRF_UARTE_EVENT_ENDRX)) {
         nrf_uarte_event_clear(uarte, NRF_UARTE_EVENT_ENDRX);
 
-        bool timeout = nrf_uarte_event_check(uarte, NRF_UARTE_EVENT_FRAME_TIMEOUT);
+        bool timeout = nrf_timer_event_check(NRF_TIMER20, NRF_TIMER_EVENT_COMPARE0);
+
         if (timeout) {
+            nrf_timer_event_clear(NRF_TIMER20, NRF_TIMER_EVENT_COMPARE0);
+            LOG_DBG("S21DataLinkUart: RX timeout (no response)");
+        } else if (nrf_uarte_event_check(uarte, NRF_UARTE_EVENT_FRAME_TIMEOUT)) {
             nrf_uarte_event_clear(uarte, NRF_UARTE_EVENT_FRAME_TIMEOUT);
-            LOG_DBG("S21DataLinkUart: RX timeout");
+            LOG_DBG("S21DataLinkUart: RX timeout (frame)");
+            timeout = true;
         } else {
             LOG_DBG("S21DataLinkUart: RX ended with %s match", self->rxMatch());
         }
@@ -244,7 +282,7 @@ void S21DataLinkUart::isrHandler(const void* arg)
             LOG_DBG("S21DataLinkUart: sending ACK for transact response");
 
             uint32_t domain_id = nrfx_gppi_domain_id_get((uint32_t)uarte);
-            nrfx_gppi_channels_disable(domain_id, BIT(self->m_dppiChTxRx));
+            nrfx_gppi_channels_disable(domain_id, BIT(self->mGppiChTxRx));
             self->m_txBuf[0] = kACK;
             nrf_uarte_event_clear(uarte, NRF_UARTE_EVENT_ENDTX);
             nrf_uarte_tx_buffer_set(uarte, self->m_txBuf, 1);
@@ -281,7 +319,7 @@ void S21DataLinkUart::isrHandler(const void* arg)
         nrf_uarte_event_clear(uarte, NRF_UARTE_EVENT_ENDTX);
         nrf_uarte_int_disable(uarte, NRF_UARTE_INT_ENDTX_MASK);
         uint32_t domain_id = nrfx_gppi_domain_id_get((uint32_t)uarte);
-        nrfx_gppi_channels_enable(domain_id, BIT(self->m_dppiChTxRx));
+        nrfx_gppi_channels_enable(domain_id, BIT(self->mGppiChTxRx));
     }
 }
 

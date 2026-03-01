@@ -15,9 +15,10 @@
 /**
  * S21 data-link layer over nRF54L UARTE with hardware DMA pattern matching.
  *
- * Uses two DPPI channels:
- *   Channel A: ENDTX → STARTRX  (automatic TX-to-RX turnaround)
- *   Channel B: MATCH  → STOPRX  (frame termination on ETX/ACK/NAK)
+ * Uses three DPPI channels:
+ *   Channel A: ENDTX → STARTRX + TIMER20 START  (TX-to-RX turnaround; start watchdog)
+ *   Channel B: MATCH[ETX/ACK/NAK] + TIMER20 COMPARE[0] → STOPRX  (frame termination or timeout)
+ *   Channel C: ENDRX → TIMER20 STOP  (cancel watchdog on normal RX completion)
  *
  * The only CPU wakeup per transaction is the ENDRX ISR, which posts the
  * result to a k_msgq and submits a k_work.  The callback runs in the
@@ -74,8 +75,9 @@ class S21DataLinkUart: public S21DataLink {
     };
 
     NRF_UARTE_Type* m_uarte;
-    uint8_t m_dppiChTxRx;  // ENDTX → STARTRX
-    uint8_t m_dppiChMatch; // MATCH → STOPRX
+    uint8_t mGppiChTxRx;             // ENDTX → STARTRX + TIMER START         (Ch A)
+    uint8_t mGppiChMatchOrTimeout;   // MATCH + TIMER COMPARE[0] → STOPRX     (Ch B)
+    uint8_t mGppiChEndrxTimer;       // ENDRX → TIMER STOP                    (Ch C)
 
     // Standard-layout wrapper so we can recover `this` from a k_work* without
     // using offsetof on a non-standard-layout type (avoids -Winvalid-offsetof).

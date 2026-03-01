@@ -38,6 +38,10 @@
 /* S21 UART — managed directly via nrfx (not the Zephyr serial driver).
  * Pin mux and baud rate are configured in S21DataLinkUart::init().
  * Keep status = "reserved" so DT macros (DT_ALIAS, DT_IRQ) still work. */
+&timer20 {
+	status = "reserved"; /* used as S21 watchdog timer; managed directly via nrfx HAL */
+};
+
 &uart21 {
 	status = "reserved";
 	current-speed = <2400>;
