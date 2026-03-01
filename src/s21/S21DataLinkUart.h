@@ -98,6 +98,7 @@ class S21DataLinkUart: public S21DataLink {
 
     void configureMatch(bool etx, bool ack, bool nak);
     void startTransaction(const std::vector<std::byte>& encoded, bool matchEtx, bool matchAck);
+    const char* rxMatch();
 
     static void isrHandler(const void* arg);
     static const char* rxResultError(RxResult& result);

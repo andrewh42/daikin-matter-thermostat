@@ -193,6 +193,27 @@ void S21DataLinkUart::startTransaction(const std::vector<std::byte>& encoded, bo
     nrf_uarte_task_trigger(m_uarte, NRF_UARTE_TASK_STARTTX);
 }
 
+/// @brief  Helper to identify which MATCH candidate caused the STOPRX (for logging/debugging).
+/// @return The name of the matched candidate, or "no" if none (e.g. RX timeout).
+const char* S21DataLinkUart::rxMatch() {
+    const char* match;
+    // simplifying assumption: match events are mutually exclusive because of the two modes, send and transact:
+    //   - send mode means we're expecting an ACK/NAK, and the S21 protocol will send one or the other, not both.
+    //   - transact mode means we're expecting an ETX)
+    if (m_uarte->EVENTS_DMA.RX.MATCH[kMatchIdxETX] > 0) {
+        match = "ETX";
+    }
+    else if (m_uarte->EVENTS_DMA.RX.MATCH[kMatchIdxACK] > 0) {
+        match = "ACK";
+    }
+    else if (m_uarte->EVENTS_DMA.RX.MATCH[kMatchIdxNAK] > 0) {
+        match = "NAK";
+    } else {
+        match = "no";
+    }
+    return match;
+}
+
 /* ──────────────────────────────────────────────────────────────────────
  * ISR — only wakeup per transaction
  * ────────────────────────────────────────────────────────────────────── */
@@ -208,12 +229,29 @@ void S21DataLinkUart::isrHandler(const void* arg)
         bool timeout = nrf_uarte_event_check(uarte, NRF_UARTE_EVENT_FRAME_TIMEOUT);
         if (timeout) {
             nrf_uarte_event_clear(uarte, NRF_UARTE_EVENT_FRAME_TIMEOUT);
+            LOG_DBG("S21DataLinkUart: RX timeout");
+        } else {
+            LOG_DBG("S21DataLinkUart: RX ended with %s match", self->rxMatch());
         }
 
         RxResult result{};
         result.len = static_cast<uint8_t>(nrf_uarte_rx_amount_get(uarte));
         std::memcpy(result.data, self->m_rxBuf, result.len);
         result.status = timeout ? RxStatus::Timeout : RxStatus::Ok;
+
+        /* For transact operations with a valid frame, send ACK back to the AC. */
+        if (!timeout && self->m_opType.load(std::memory_order_relaxed) == OpType::Transact) {
+            LOG_DBG("S21DataLinkUart: sending ACK for transact response");
+
+            uint32_t domain_id = nrfx_gppi_domain_id_get((uint32_t)uarte);
+            nrfx_gppi_channels_disable(domain_id, BIT(self->m_dppiChTxRx));
+            self->m_txBuf[0] = kACK;
+            nrf_uarte_event_clear(uarte, NRF_UARTE_EVENT_ENDTX);
+            nrf_uarte_tx_buffer_set(uarte, self->m_txBuf, 1);
+            nrf_uarte_int_enable(uarte, NRF_UARTE_INT_ENDTX_MASK);
+            nrf_uarte_task_trigger(uarte, NRF_UARTE_TASK_STARTTX);
+        }
+
         k_msgq_put(&self->m_rxMsgq, &result, K_NO_WAIT);
         k_work_submit(&self->m_completionWork.work);
     }
@@ -236,6 +274,14 @@ void S21DataLinkUart::isrHandler(const void* arg)
     /* FRAMETIMEOUT without ENDRX — clear it to avoid spurious interrupts. */
     if (nrf_uarte_event_check(uarte, NRF_UARTE_EVENT_FRAME_TIMEOUT)) {
         nrf_uarte_event_clear(uarte, NRF_UARTE_EVENT_FRAME_TIMEOUT);
+    }
+
+    /* ENDTX — ACK byte transmitted; re-enable Ch A (ENDTX→STARTRX) for next transaction. */
+    if (nrf_uarte_event_check(uarte, NRF_UARTE_EVENT_ENDTX)) {
+        nrf_uarte_event_clear(uarte, NRF_UARTE_EVENT_ENDTX);
+        nrf_uarte_int_disable(uarte, NRF_UARTE_INT_ENDTX_MASK);
+        uint32_t domain_id = nrfx_gppi_domain_id_get((uint32_t)uarte);
+        nrfx_gppi_channels_enable(domain_id, BIT(self->m_dppiChTxRx));
     }
 }
 
