@@ -72,6 +72,13 @@ static uint8_t decodeHumidity(const std::vector<std::byte>& r, size_t offset = 2
     return static_cast<uint8_t>(decodeReversedDigits(r, offset));
 }
 
+/// @brief Decodes a single ASCII version digit byte; returns 0 for null padding.
+static uint8_t decodeVersionDigit(std::byte b)
+{
+    uint8_t c = static_cast<uint8_t>(b);
+    return (c >= '0' && c <= '9') ? static_cast<uint8_t>(c - '0') : 0;
+}
+
 void S21Presentation::getOperation(GetOperationCallback cb)
 {
     m_dataLink.transact({std::byte{'F'}, std::byte{'1'}},
@@ -124,4 +131,60 @@ void S21Presentation::getHumidity(GetHumidityCallback cb)
                             }
                             cb(decodeHumidity(*response));
                         });
+}
+
+void S21Presentation::getCoarseTemperatureAndHumidity(GetCoarseTemperatureAndHumidityCallback cb)
+{
+    m_dataLink.transact({std::byte{'F'}, std::byte{'9'}},
+                        [cb = std::move(cb)](tl::expected<std::vector<std::byte>, S21DataLinkError> response) {
+                            if (!response) {
+                                cb(tl::unexpected(response.error()));
+                                return;
+                            }
+                            int16_t indoor  = static_cast<int16_t>(static_cast<int8_t>(static_cast<uint8_t>((*response)[2]) - 0x80)) * 50;
+                            int16_t outdoor = static_cast<int16_t>(static_cast<int8_t>(static_cast<uint8_t>((*response)[3]) - 0x80)) * 50;
+                            uint8_t hum     = static_cast<uint8_t>((*response)[4]) - 0x30;
+                            cb(std::make_tuple(indoor, outdoor, hum));
+                        });
+}
+
+void S21Presentation::getFanMode(GetFanModeCallback cb)
+{
+    m_dataLink.transact({std::byte{'R'}, std::byte{'G'}},
+                        [cb = std::move(cb)](tl::expected<std::vector<std::byte>, S21DataLinkError> response) {
+                            if (!response) {
+                                cb(tl::unexpected(response.error()));
+                                return;
+                            }
+                            cb(static_cast<FanMode>(static_cast<uint8_t>((*response)[2])));
+                        });
+}
+
+void S21Presentation::getProtocolVersion(GetProtocolVersionCallback cb)
+{
+    m_dataLink.transact({std::byte{'F'}, std::byte{'8'}},
+                        [cb = std::move(cb)](tl::expected<std::vector<std::byte>, S21DataLinkError> response) {
+                            if (!response) {
+                                cb(tl::unexpected(response.error()));
+                                return;
+                            }
+                            uint8_t minor = decodeVersionDigit((*response)[2]);
+                            uint8_t major = decodeVersionDigit((*response)[3]);
+                            cb(std::make_pair(major, minor));
+                        });
+}
+
+void S21Presentation::getExtendedProtocolVersion(GetProtocolVersionCallback cb)
+{
+    m_dataLink.transact(
+            {std::byte{'F'}, std::byte{'Y'}, std::byte{'0'}, std::byte{'0'}},
+            [cb = std::move(cb)](tl::expected<std::vector<std::byte>, S21DataLinkError> response) {
+                if (!response) {
+                    cb(tl::unexpected(response.error()));
+                    return;
+                }
+                uint8_t minor = decodeVersionDigit((*response)[4]) + decodeVersionDigit((*response)[5]) * 10;
+                uint8_t major = decodeVersionDigit((*response)[6]) + decodeVersionDigit((*response)[7]) * 10;
+                cb(std::make_pair(major, minor));
+            });
 }

@@ -375,3 +375,227 @@ TEST_CASE("S21Presentation getHumidity propagates transact error", "[s21pres][hu
 
     REQUIRE_FALSE(result.has_value());
 }
+
+// ─── getCoarseTemperatureAndHumidity ─────────────────────────────────────────
+
+TEST_CASE("S21Presentation getCoarseTemperatureAndHumidity sends F9 poll", "[s21pres][coarseTemp]")
+{
+    MockS21DataLink mock;
+    S21Presentation pres(mock);
+    mock.nextResponse = bytes('G', '9', 0xAC, 0xAA, 0x4E, 0x30);
+    pres.getCoarseTemperatureAndHumidity([](auto) {});
+
+    REQUIRE(mock.lastTransmitted == bytes('F', '9'));
+}
+
+TEST_CASE("S21Presentation getCoarseTemperatureAndHumidity parses 22°C indoor, 21°C outdoor, 30% humidity", "[s21pres][coarseTemp]")
+{
+    // G9 response: 0xAC=indoor(22°C→2200), 0xAA=outdoor(21°C→2100), 0x4E=humidity(0x4E-0x30=30%)
+    MockS21DataLink mock;
+    S21Presentation pres(mock);
+    mock.nextResponse = bytes('G', '9', 0xAC, 0xAA, 0x4E, 0x30);
+
+    tl::expected<S21Presentation::GetCoarseTemperatureAndHumidityResult, S21DataLinkError> result;
+    pres.getCoarseTemperatureAndHumidity([&](auto r) { result = r; });
+
+    REQUIRE(result.has_value());
+    auto [indoor, outdoor, hum] = result.value();
+    REQUIRE(indoor == 2200);
+    REQUIRE(outdoor == 2100);
+    REQUIRE(hum == 30);
+}
+
+TEST_CASE("S21Presentation getCoarseTemperatureAndHumidity parses negative outdoor temp -5°C", "[s21pres][coarseTemp]")
+{
+    // outdoor byte 0x76: (0x76 - 0x80) as int8_t = -10; -10 * 50 = -500 (= -5.00°C)
+    MockS21DataLink mock;
+    S21Presentation pres(mock);
+    mock.nextResponse = bytes('G', '9', 0xAC, 0x76, 0x4E, 0x30);
+
+    tl::expected<S21Presentation::GetCoarseTemperatureAndHumidityResult, S21DataLinkError> result;
+    pres.getCoarseTemperatureAndHumidity([&](auto r) { result = r; });
+
+    REQUIRE(result.has_value());
+    auto [indoor, outdoor, hum] = result.value();
+    REQUIRE(outdoor == -500);
+}
+
+TEST_CASE("S21Presentation getCoarseTemperatureAndHumidity propagates transact error", "[s21pres][coarseTemp]")
+{
+    MockS21DataLink mock;
+    S21Presentation pres(mock);
+    mock.nextError = S21DataLinkError("timeout");
+
+    tl::expected<S21Presentation::GetCoarseTemperatureAndHumidityResult, S21DataLinkError> result;
+    pres.getCoarseTemperatureAndHumidity([&](auto r) { result = r; });
+
+    REQUIRE_FALSE(result.has_value());
+}
+
+// ─── getFanMode ───────────────────────────────────────────────────────────────
+
+TEST_CASE("S21Presentation getFanMode sends RG poll", "[s21pres][fanMode]")
+{
+    MockS21DataLink mock;
+    S21Presentation pres(mock);
+    mock.nextResponse = bytes('S', 'G', '7');
+    pres.getFanMode([](auto) {});
+
+    REQUIRE(mock.lastTransmitted == bytes('R', 'G'));
+}
+
+TEST_CASE("S21Presentation getFanMode parses High", "[s21pres][fanMode]")
+{
+    MockS21DataLink mock;
+    S21Presentation pres(mock);
+    mock.nextResponse = bytes('S', 'G', '7');
+
+    tl::expected<S21Presentation::GetFanModeResult, S21DataLinkError> result;
+    pres.getFanMode([&](auto r) { result = r; });
+
+    REQUIRE(result.has_value());
+    REQUIRE(result.value() == FanMode::High);
+}
+
+TEST_CASE("S21Presentation getFanMode parses Quiet", "[s21pres][fanMode]")
+{
+    MockS21DataLink mock;
+    S21Presentation pres(mock);
+    mock.nextResponse = bytes('S', 'G', 'B');
+
+    tl::expected<S21Presentation::GetFanModeResult, S21DataLinkError> result;
+    pres.getFanMode([&](auto r) { result = r; });
+
+    REQUIRE(result.has_value());
+    REQUIRE(result.value() == FanMode::Quiet);
+}
+
+TEST_CASE("S21Presentation getFanMode propagates transact error", "[s21pres][fanMode]")
+{
+    MockS21DataLink mock;
+    S21Presentation pres(mock);
+    mock.nextError = S21DataLinkError("timeout");
+
+    tl::expected<S21Presentation::GetFanModeResult, S21DataLinkError> result;
+    pres.getFanMode([&](auto r) { result = r; });
+
+    REQUIRE_FALSE(result.has_value());
+}
+
+// ─── getProtocolVersion ───────────────────────────────────────────────────────
+
+TEST_CASE("S21Presentation getProtocolVersion sends F8 poll", "[s21pres][protVer]")
+{
+    MockS21DataLink mock;
+    S21Presentation pres(mock);
+    mock.nextResponse = bytes('G', '8', '0', 0x00, 0x00, 0x00);
+    pres.getProtocolVersion([](auto) {});
+
+    REQUIRE(mock.lastTransmitted == bytes('F', '8'));
+}
+
+TEST_CASE("S21Presentation getProtocolVersion parses v0.0 single digit", "[s21pres][protVer]")
+{
+    MockS21DataLink mock;
+    S21Presentation pres(mock);
+    mock.nextResponse = bytes('G', '8', '0', 0x00, 0x00, 0x00);
+
+    tl::expected<S21Presentation::GetProtocolVersionResult, S21DataLinkError> result;
+    pres.getProtocolVersion([&](auto r) { result = r; });
+
+    REQUIRE(result.has_value());
+    REQUIRE(result.value().first == 0);  // major
+    REQUIRE(result.value().second == 0); // minor
+}
+
+TEST_CASE("S21Presentation getProtocolVersion parses v1.0 two digits", "[s21pres][protVer]")
+{
+    MockS21DataLink mock;
+    S21Presentation pres(mock);
+    mock.nextResponse = bytes('G', '8', '0', '1', 0x00, 0x00);
+
+    tl::expected<S21Presentation::GetProtocolVersionResult, S21DataLinkError> result;
+    pres.getProtocolVersion([&](auto r) { result = r; });
+
+    REQUIRE(result.has_value());
+    REQUIRE(result.value().first == 1);  // major
+    REQUIRE(result.value().second == 0); // minor
+}
+
+TEST_CASE("S21Presentation getProtocolVersion parses v2.0 two digits", "[s21pres][protVer]")
+{
+    MockS21DataLink mock;
+    S21Presentation pres(mock);
+    mock.nextResponse = bytes('G', '8', '0', '2', 0x00, 0x00);
+
+    tl::expected<S21Presentation::GetProtocolVersionResult, S21DataLinkError> result;
+    pres.getProtocolVersion([&](auto r) { result = r; });
+
+    REQUIRE(result.has_value());
+    REQUIRE(result.value().first == 2);  // major
+    REQUIRE(result.value().second == 0); // minor
+}
+
+TEST_CASE("S21Presentation getProtocolVersion propagates transact error", "[s21pres][protVer]")
+{
+    MockS21DataLink mock;
+    S21Presentation pres(mock);
+    mock.nextError = S21DataLinkError("timeout");
+
+    tl::expected<S21Presentation::GetProtocolVersionResult, S21DataLinkError> result;
+    pres.getProtocolVersion([&](auto r) { result = r; });
+
+    REQUIRE_FALSE(result.has_value());
+}
+
+// ─── getExtendedProtocolVersion ───────────────────────────────────────────────
+
+TEST_CASE("S21Presentation getExtendedProtocolVersion sends FY00 poll", "[s21pres][extProtVer]")
+{
+    MockS21DataLink mock;
+    S21Presentation pres(mock);
+    mock.nextResponse = bytes('G', 'Y', '0', '0', '0', '2', '3', '0');
+    pres.getExtendedProtocolVersion([](auto) {});
+
+    REQUIRE(mock.lastTransmitted == bytes('F', 'Y', '0', '0'));
+}
+
+TEST_CASE("S21Presentation getExtendedProtocolVersion parses v3.20", "[s21pres][extProtVer]")
+{
+    // GY00 response data '0','2','3','0': minor=0+2*10=20, major=3+0*10=3 → v3.20
+    MockS21DataLink mock;
+    S21Presentation pres(mock);
+    mock.nextResponse = bytes('G', 'Y', '0', '0', '0', '2', '3', '0');
+
+    tl::expected<S21Presentation::GetProtocolVersionResult, S21DataLinkError> result;
+    pres.getExtendedProtocolVersion([&](auto r) { result = r; });
+
+    REQUIRE(result.has_value());
+    REQUIRE(result.value().first == 3);   // major
+    REQUIRE(result.value().second == 20); // minor
+}
+
+TEST_CASE("S21Presentation getExtendedProtocolVersion NAK on v2 and below units", "[s21pres][extProtVer]")
+{
+    MockS21DataLink mock;
+    S21Presentation pres(mock);
+    mock.nextError = S21DataLinkError("NAK");
+
+    tl::expected<S21Presentation::GetProtocolVersionResult, S21DataLinkError> result;
+    pres.getExtendedProtocolVersion([&](auto r) { result = r; });
+
+    REQUIRE_FALSE(result.has_value());
+    REQUIRE(std::string_view(result.error().what()) == "NAK");
+}
+
+TEST_CASE("S21Presentation getExtendedProtocolVersion propagates transact error", "[s21pres][extProtVer]")
+{
+    MockS21DataLink mock;
+    S21Presentation pres(mock);
+    mock.nextError = S21DataLinkError("timeout");
+
+    tl::expected<S21Presentation::GetProtocolVersionResult, S21DataLinkError> result;
+    pres.getExtendedProtocolVersion([&](auto r) { result = r; });
+
+    REQUIRE_FALSE(result.has_value());
+}
