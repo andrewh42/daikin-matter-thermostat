@@ -1,0 +1,21 @@
+# clangd configuration for the daikin-matter-airconditioner project.
+#
+# Requires the main app to have been built at least once:
+#   west build -p -d build-xiao -b xiao_nrf54l15/nrf54l15/cpuapp -- \
+#     -DCONFIG_CHIP_DFU_OVER_BT_SMP=y -DFILE_SUFFIX=internal
+#
+# For integration test coverage, also build:
+#   west build -p -d build-s21-integration tests/integration/s21_datalink_uart \
+#     -b xiao_nrf54l15/nrf54l15/cpuapp -- -DFILE_SUFFIX=internal
+
+CompileFlags:
+  CompilationDatabase: build-xiao/daikin-matter-airconditioner
+
+---
+
+# Integration tests use a separate build whose compile_commands.json
+# covers the test source files and the S21 library sources they pull in.
+If:
+  PathMatch: tests/.*
+CompileFlags:
+  CompilationDatabase: build-s21-integration/s21_datalink_uart
