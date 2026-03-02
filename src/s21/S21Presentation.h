@@ -31,6 +31,15 @@ enum class FanMode : uint8_t {
     Quiet = 'B',   // 0x42
 };
 
+class S21PresentationError {
+  public:
+    explicit S21PresentationError(const char* msg) : m_msg(msg) {}
+    const char* what() const { return m_msg; }
+
+  private:
+    const char* m_msg;
+};
+
 /**
  * @brief Presentation layer for Daikin S21 interface. Responsible for encoding commands to the S21
  * data link and decoding responses.
@@ -39,7 +48,7 @@ class S21Presentation {
   public:
     using GetOperationResult = std::tuple<bool, OperatingMode, int16_t, FanMode>;
     using SetOperationCallback = std::function<void(tl::expected<void, S21DataLinkError>)>;
-    using GetOperationCallback = std::function<void(tl::expected<GetOperationResult, S21DataLinkError>)>;
+    using GetOperationCallback = std::function<void(tl::expected<GetOperationResult, S21PresentationError>)>;
 
     S21Presentation(S21DataLink& dataLink)
             : m_dataLink(dataLink) {};
@@ -59,10 +68,10 @@ class S21Presentation {
     void getOperation(GetOperationCallback cb);
 
     using GetTemperatureResult = int16_t; // 0.01 °C units
-    using GetTemperatureCallback = std::function<void(tl::expected<GetTemperatureResult, S21DataLinkError>)>;
+    using GetTemperatureCallback = std::function<void(tl::expected<GetTemperatureResult, S21PresentationError>)>;
 
     using GetHumidityResult = uint8_t; // percentage 0–100
-    using GetHumidityCallback = std::function<void(tl::expected<GetHumidityResult, S21DataLinkError>)>;
+    using GetHumidityCallback = std::function<void(tl::expected<GetHumidityResult, S21PresentationError>)>;
 
     /// @brief Reads the room (indoor) temperature from the AC sensor.
     /// @param cb callback invoked with temperature in 0.01 °C units on success, or an error.
@@ -77,13 +86,13 @@ class S21Presentation {
     void getHumidity(GetHumidityCallback cb);
 
     using GetCoarseTemperatureAndHumidityResult = std::tuple<int16_t, int16_t, uint8_t>; // indoor, outdoor (0.01 °C), humidity (%)
-    using GetCoarseTemperatureAndHumidityCallback = std::function<void(tl::expected<GetCoarseTemperatureAndHumidityResult, S21DataLinkError>)>;
+    using GetCoarseTemperatureAndHumidityCallback = std::function<void(tl::expected<GetCoarseTemperatureAndHumidityResult, S21PresentationError>)>;
 
     using GetFanModeResult = FanMode;
-    using GetFanModeCallback = std::function<void(tl::expected<GetFanModeResult, S21DataLinkError>)>;
+    using GetFanModeCallback = std::function<void(tl::expected<GetFanModeResult, S21PresentationError>)>;
 
     using GetProtocolVersionResult = std::pair<uint8_t, uint8_t>; // {major, minor}
-    using GetProtocolVersionCallback = std::function<void(tl::expected<GetProtocolVersionResult, S21DataLinkError>)>;
+    using GetProtocolVersionCallback = std::function<void(tl::expected<GetProtocolVersionResult, S21PresentationError>)>;
 
     /// @brief Reads coarse indoor/outdoor temperatures (0.01 °C, 0.5 °C steps) and humidity (%, 5% steps).
     /// @param cb callback invoked with (indoorTemp, outdoorTemp, humidity) on success, or an error.

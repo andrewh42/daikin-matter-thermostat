@@ -79,14 +79,30 @@ static uint8_t decodeVersionDigit(std::byte b)
     return (c >= '0' && c <= '9') ? static_cast<uint8_t>(c - '0') : 0;
 }
 
+/// @brief Forwards transact errors (converting to S21PresentationError) and validates
+/// response[0]==c0, response[1]==c1. Calls cb with an error and returns false on failure.
+template<typename Callback>
+static bool validateResponseCode(
+    const tl::expected<std::vector<std::byte>, S21DataLinkError>& response,
+    char c0, char c1, Callback& cb)
+{
+    if (!response) {
+        cb(tl::unexpected(S21PresentationError(response.error().what())));
+        return false;
+    }
+    if ((*response)[0] != std::byte{static_cast<uint8_t>(c0)} ||
+        (*response)[1] != std::byte{static_cast<uint8_t>(c1)}) {
+        cb(tl::unexpected(S21PresentationError("unexpected response code")));
+        return false;
+    }
+    return true;
+}
+
 void S21Presentation::getOperation(GetOperationCallback cb)
 {
     m_dataLink.transact({std::byte{'F'}, std::byte{'1'}},
                         [cb = std::move(cb)](tl::expected<std::vector<std::byte>, S21DataLinkError> response) {
-                            if (!response) {
-                                cb(tl::unexpected(response.error()));
-                                return;
-                            }
+                            if (!validateResponseCode(response, 'G', '1', cb)) return;
 
                             bool onOff = (*response)[2] != std::byte{'0'};
                             auto mode = static_cast<OperatingMode>(static_cast<uint8_t>((*response)[3]));
@@ -101,10 +117,7 @@ void S21Presentation::getRoomTemperature(GetTemperatureCallback cb)
 {
     m_dataLink.transact({std::byte{'R'}, std::byte{'H'}},
                         [cb = std::move(cb)](tl::expected<std::vector<std::byte>, S21DataLinkError> response) {
-                            if (!response) {
-                                cb(tl::unexpected(response.error()));
-                                return;
-                            }
+                            if (!validateResponseCode(response, 'S', 'H', cb)) return;
                             cb(decodeSensorTemp(*response));
                         });
 }
@@ -113,10 +126,7 @@ void S21Presentation::getOutdoorTemperature(GetTemperatureCallback cb)
 {
     m_dataLink.transact({std::byte{'R'}, std::byte{'a'}},
                         [cb = std::move(cb)](tl::expected<std::vector<std::byte>, S21DataLinkError> response) {
-                            if (!response) {
-                                cb(tl::unexpected(response.error()));
-                                return;
-                            }
+                            if (!validateResponseCode(response, 'S', 'a', cb)) return;
                             cb(decodeSensorTemp(*response));
                         });
 }
@@ -125,10 +135,7 @@ void S21Presentation::getHumidity(GetHumidityCallback cb)
 {
     m_dataLink.transact({std::byte{'R'}, std::byte{'e'}},
                         [cb = std::move(cb)](tl::expected<std::vector<std::byte>, S21DataLinkError> response) {
-                            if (!response) {
-                                cb(tl::unexpected(response.error()));
-                                return;
-                            }
+                            if (!validateResponseCode(response, 'S', 'e', cb)) return;
                             cb(decodeHumidity(*response));
                         });
 }
@@ -137,10 +144,7 @@ void S21Presentation::getCoarseTemperatureAndHumidity(GetCoarseTemperatureAndHum
 {
     m_dataLink.transact({std::byte{'F'}, std::byte{'9'}},
                         [cb = std::move(cb)](tl::expected<std::vector<std::byte>, S21DataLinkError> response) {
-                            if (!response) {
-                                cb(tl::unexpected(response.error()));
-                                return;
-                            }
+                            if (!validateResponseCode(response, 'G', '9', cb)) return;
                             int16_t indoor  = static_cast<int16_t>(static_cast<int8_t>(static_cast<uint8_t>((*response)[2]) - 0x80)) * 50;
                             int16_t outdoor = static_cast<int16_t>(static_cast<int8_t>(static_cast<uint8_t>((*response)[3]) - 0x80)) * 50;
                             uint8_t hum     = static_cast<uint8_t>((*response)[4]) - 0x30;
@@ -152,10 +156,7 @@ void S21Presentation::getFanMode(GetFanModeCallback cb)
 {
     m_dataLink.transact({std::byte{'R'}, std::byte{'G'}},
                         [cb = std::move(cb)](tl::expected<std::vector<std::byte>, S21DataLinkError> response) {
-                            if (!response) {
-                                cb(tl::unexpected(response.error()));
-                                return;
-                            }
+                            if (!validateResponseCode(response, 'S', 'G', cb)) return;
                             cb(static_cast<FanMode>(static_cast<uint8_t>((*response)[2])));
                         });
 }
@@ -164,10 +165,7 @@ void S21Presentation::getProtocolVersion(GetProtocolVersionCallback cb)
 {
     m_dataLink.transact({std::byte{'F'}, std::byte{'8'}},
                         [cb = std::move(cb)](tl::expected<std::vector<std::byte>, S21DataLinkError> response) {
-                            if (!response) {
-                                cb(tl::unexpected(response.error()));
-                                return;
-                            }
+                            if (!validateResponseCode(response, 'G', '8', cb)) return;
                             uint8_t minor = decodeVersionDigit((*response)[2]);
                             uint8_t major = decodeVersionDigit((*response)[3]);
                             cb(std::make_pair(major, minor));
@@ -179,10 +177,7 @@ void S21Presentation::getExtendedProtocolVersion(GetProtocolVersionCallback cb)
     m_dataLink.transact(
             {std::byte{'F'}, std::byte{'Y'}, std::byte{'0'}, std::byte{'0'}},
             [cb = std::move(cb)](tl::expected<std::vector<std::byte>, S21DataLinkError> response) {
-                if (!response) {
-                    cb(tl::unexpected(response.error()));
-                    return;
-                }
+                if (!validateResponseCode(response, 'G', 'Y', cb)) return;
                 uint8_t minor = decodeVersionDigit((*response)[4]) + decodeVersionDigit((*response)[5]) * 10;
                 uint8_t major = decodeVersionDigit((*response)[6]) + decodeVersionDigit((*response)[7]) * 10;
                 cb(std::make_pair(major, minor));

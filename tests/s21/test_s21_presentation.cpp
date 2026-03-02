@@ -117,7 +117,7 @@ TEST_CASE("S21Presentation getOperation parses G1 on/Cool/22°C/Auto", "[s21pres
 
     mock.nextResponse = bytes('G', '1', '1', '3', 'H', 'A');
 
-    tl::expected<S21Presentation::GetOperationResult, S21DataLinkError> result;
+    tl::expected<S21Presentation::GetOperationResult, S21PresentationError> result;
     pres.getOperation([&](auto r) { result = r; });
 
     REQUIRE(result.has_value());
@@ -138,7 +138,7 @@ TEST_CASE("S21Presentation getOperation parses G1 off/Heat/25°C/Quiet", "[s21pr
 
     mock.nextResponse = bytes('G', '1', '0', '4', 'N', 'B');
 
-    tl::expected<S21Presentation::GetOperationResult, S21DataLinkError> result;
+    tl::expected<S21Presentation::GetOperationResult, S21PresentationError> result;
     pres.getOperation([&](auto r) { result = r; });
 
     REQUIRE(result.has_value());
@@ -156,7 +156,7 @@ TEST_CASE("S21Presentation getOperation propagates transact error", "[s21pres][g
     S21Presentation pres(mock);
     mock.nextError = S21DataLinkError("timeout");
 
-    tl::expected<S21Presentation::GetOperationResult, S21DataLinkError> result;
+    tl::expected<S21Presentation::GetOperationResult, S21PresentationError> result;
     pres.getOperation([&](auto r) { result = r; });
 
     REQUIRE_FALSE(result.has_value());
@@ -183,7 +183,7 @@ TEST_CASE("S21Presentation getRoomTemperature parses positive temp 26.5°C", "[s
     S21Presentation pres(mock);
     mock.nextResponse = bytes('S', 'H', '5', '6', '2', '+');
 
-    tl::expected<S21Presentation::GetTemperatureResult, S21DataLinkError> result;
+    tl::expected<S21Presentation::GetTemperatureResult, S21PresentationError> result;
     pres.getRoomTemperature([&](auto r) { result = r; });
 
     REQUIRE(result.has_value());
@@ -197,7 +197,7 @@ TEST_CASE("S21Presentation getRoomTemperature parses negative temp -5.0°C", "[s
     S21Presentation pres(mock);
     mock.nextResponse = bytes('S', 'H', '0', '5', '0', '-');
 
-    tl::expected<S21Presentation::GetTemperatureResult, S21DataLinkError> result;
+    tl::expected<S21Presentation::GetTemperatureResult, S21PresentationError> result;
     pres.getRoomTemperature([&](auto r) { result = r; });
 
     REQUIRE(result.has_value());
@@ -210,7 +210,7 @@ TEST_CASE("S21Presentation getRoomTemperature parses zero", "[s21pres][roomTemp]
     S21Presentation pres(mock);
     mock.nextResponse = bytes('S', 'H', '0', '0', '0', '+');
 
-    tl::expected<S21Presentation::GetTemperatureResult, S21DataLinkError> result;
+    tl::expected<S21Presentation::GetTemperatureResult, S21PresentationError> result;
     pres.getRoomTemperature([&](auto r) { result = r; });
 
     REQUIRE(result.has_value());
@@ -223,7 +223,7 @@ TEST_CASE("S21Presentation getRoomTemperature propagates transact error", "[s21p
     S21Presentation pres(mock);
     mock.nextError = S21DataLinkError("timeout");
 
-    tl::expected<S21Presentation::GetTemperatureResult, S21DataLinkError> result;
+    tl::expected<S21Presentation::GetTemperatureResult, S21PresentationError> result;
     pres.getRoomTemperature([&](auto r) { result = r; });
 
     REQUIRE_FALSE(result.has_value());
@@ -250,7 +250,7 @@ TEST_CASE("S21Presentation getOutdoorTemperature parses 2.5°C", "[s21pres][outd
     S21Presentation pres(mock);
     mock.nextResponse = bytes('S', 'a', '5', '2', '0', '+');
 
-    tl::expected<S21Presentation::GetTemperatureResult, S21DataLinkError> result;
+    tl::expected<S21Presentation::GetTemperatureResult, S21PresentationError> result;
     pres.getOutdoorTemperature([&](auto r) { result = r; });
 
     REQUIRE(result.has_value());
@@ -264,7 +264,7 @@ TEST_CASE("S21Presentation getOutdoorTemperature parses negative temp -10.5°C",
     S21Presentation pres(mock);
     mock.nextResponse = bytes('S', 'a', '5', '0', '1', '-');
 
-    tl::expected<S21Presentation::GetTemperatureResult, S21DataLinkError> result;
+    tl::expected<S21Presentation::GetTemperatureResult, S21PresentationError> result;
     pres.getOutdoorTemperature([&](auto r) { result = r; });
 
     REQUIRE(result.has_value());
@@ -277,7 +277,7 @@ TEST_CASE("S21Presentation getOutdoorTemperature parses zero", "[s21pres][outdoo
     S21Presentation pres(mock);
     mock.nextResponse = bytes('S', 'a', '0', '0', '0', '+');
 
-    tl::expected<S21Presentation::GetTemperatureResult, S21DataLinkError> result;
+    tl::expected<S21Presentation::GetTemperatureResult, S21PresentationError> result;
     pres.getOutdoorTemperature([&](auto r) { result = r; });
 
     REQUIRE(result.has_value());
@@ -290,7 +290,7 @@ TEST_CASE("S21Presentation getOutdoorTemperature propagates transact error", "[s
     S21Presentation pres(mock);
     mock.nextError = S21DataLinkError("timeout");
 
-    tl::expected<S21Presentation::GetTemperatureResult, S21DataLinkError> result;
+    tl::expected<S21Presentation::GetTemperatureResult, S21PresentationError> result;
     pres.getOutdoorTemperature([&](auto r) { result = r; });
 
     REQUIRE_FALSE(result.has_value());
@@ -316,7 +316,7 @@ TEST_CASE("S21Presentation getHumidity parses 79%", "[s21pres][humidity]")
     S21Presentation pres(mock);
     mock.nextResponse = bytes('S', 'e', '9', '7', '0');
 
-    tl::expected<S21Presentation::GetHumidityResult, S21DataLinkError> result;
+    tl::expected<S21Presentation::GetHumidityResult, S21PresentationError> result;
     pres.getHumidity([&](auto r) { result = r; });
 
     REQUIRE(result.has_value());
@@ -330,7 +330,7 @@ TEST_CASE("S21Presentation getHumidity parses 50%", "[s21pres][humidity]")
     S21Presentation pres(mock);
     mock.nextResponse = bytes('S', 'e', '0', '5', '0');
 
-    tl::expected<S21Presentation::GetHumidityResult, S21DataLinkError> result;
+    tl::expected<S21Presentation::GetHumidityResult, S21PresentationError> result;
     pres.getHumidity([&](auto r) { result = r; });
 
     REQUIRE(result.has_value());
@@ -343,7 +343,7 @@ TEST_CASE("S21Presentation getHumidity parses 0%", "[s21pres][humidity]")
     S21Presentation pres(mock);
     mock.nextResponse = bytes('S', 'e', '0', '0', '0');
 
-    tl::expected<S21Presentation::GetHumidityResult, S21DataLinkError> result;
+    tl::expected<S21Presentation::GetHumidityResult, S21PresentationError> result;
     pres.getHumidity([&](auto r) { result = r; });
 
     REQUIRE(result.has_value());
@@ -357,7 +357,7 @@ TEST_CASE("S21Presentation getHumidity parses 100%", "[s21pres][humidity]")
     S21Presentation pres(mock);
     mock.nextResponse = bytes('S', 'e', '0', '0', '1');
 
-    tl::expected<S21Presentation::GetHumidityResult, S21DataLinkError> result;
+    tl::expected<S21Presentation::GetHumidityResult, S21PresentationError> result;
     pres.getHumidity([&](auto r) { result = r; });
 
     REQUIRE(result.has_value());
@@ -370,7 +370,7 @@ TEST_CASE("S21Presentation getHumidity propagates transact error", "[s21pres][hu
     S21Presentation pres(mock);
     mock.nextError = S21DataLinkError("timeout");
 
-    tl::expected<S21Presentation::GetHumidityResult, S21DataLinkError> result;
+    tl::expected<S21Presentation::GetHumidityResult, S21PresentationError> result;
     pres.getHumidity([&](auto r) { result = r; });
 
     REQUIRE_FALSE(result.has_value());
@@ -395,7 +395,7 @@ TEST_CASE("S21Presentation getCoarseTemperatureAndHumidity parses 22°C indoor, 
     S21Presentation pres(mock);
     mock.nextResponse = bytes('G', '9', 0xAC, 0xAA, 0x4E, 0x30);
 
-    tl::expected<S21Presentation::GetCoarseTemperatureAndHumidityResult, S21DataLinkError> result;
+    tl::expected<S21Presentation::GetCoarseTemperatureAndHumidityResult, S21PresentationError> result;
     pres.getCoarseTemperatureAndHumidity([&](auto r) { result = r; });
 
     REQUIRE(result.has_value());
@@ -412,7 +412,7 @@ TEST_CASE("S21Presentation getCoarseTemperatureAndHumidity parses negative outdo
     S21Presentation pres(mock);
     mock.nextResponse = bytes('G', '9', 0xAC, 0x76, 0x4E, 0x30);
 
-    tl::expected<S21Presentation::GetCoarseTemperatureAndHumidityResult, S21DataLinkError> result;
+    tl::expected<S21Presentation::GetCoarseTemperatureAndHumidityResult, S21PresentationError> result;
     pres.getCoarseTemperatureAndHumidity([&](auto r) { result = r; });
 
     REQUIRE(result.has_value());
@@ -426,7 +426,7 @@ TEST_CASE("S21Presentation getCoarseTemperatureAndHumidity propagates transact e
     S21Presentation pres(mock);
     mock.nextError = S21DataLinkError("timeout");
 
-    tl::expected<S21Presentation::GetCoarseTemperatureAndHumidityResult, S21DataLinkError> result;
+    tl::expected<S21Presentation::GetCoarseTemperatureAndHumidityResult, S21PresentationError> result;
     pres.getCoarseTemperatureAndHumidity([&](auto r) { result = r; });
 
     REQUIRE_FALSE(result.has_value());
@@ -450,7 +450,7 @@ TEST_CASE("S21Presentation getFanMode parses High", "[s21pres][fanMode]")
     S21Presentation pres(mock);
     mock.nextResponse = bytes('S', 'G', '7');
 
-    tl::expected<S21Presentation::GetFanModeResult, S21DataLinkError> result;
+    tl::expected<S21Presentation::GetFanModeResult, S21PresentationError> result;
     pres.getFanMode([&](auto r) { result = r; });
 
     REQUIRE(result.has_value());
@@ -463,7 +463,7 @@ TEST_CASE("S21Presentation getFanMode parses Quiet", "[s21pres][fanMode]")
     S21Presentation pres(mock);
     mock.nextResponse = bytes('S', 'G', 'B');
 
-    tl::expected<S21Presentation::GetFanModeResult, S21DataLinkError> result;
+    tl::expected<S21Presentation::GetFanModeResult, S21PresentationError> result;
     pres.getFanMode([&](auto r) { result = r; });
 
     REQUIRE(result.has_value());
@@ -476,7 +476,7 @@ TEST_CASE("S21Presentation getFanMode propagates transact error", "[s21pres][fan
     S21Presentation pres(mock);
     mock.nextError = S21DataLinkError("timeout");
 
-    tl::expected<S21Presentation::GetFanModeResult, S21DataLinkError> result;
+    tl::expected<S21Presentation::GetFanModeResult, S21PresentationError> result;
     pres.getFanMode([&](auto r) { result = r; });
 
     REQUIRE_FALSE(result.has_value());
@@ -500,7 +500,7 @@ TEST_CASE("S21Presentation getProtocolVersion parses v0.0 single digit", "[s21pr
     S21Presentation pres(mock);
     mock.nextResponse = bytes('G', '8', '0', 0x00, 0x00, 0x00);
 
-    tl::expected<S21Presentation::GetProtocolVersionResult, S21DataLinkError> result;
+    tl::expected<S21Presentation::GetProtocolVersionResult, S21PresentationError> result;
     pres.getProtocolVersion([&](auto r) { result = r; });
 
     REQUIRE(result.has_value());
@@ -514,7 +514,7 @@ TEST_CASE("S21Presentation getProtocolVersion parses v1.0 two digits", "[s21pres
     S21Presentation pres(mock);
     mock.nextResponse = bytes('G', '8', '0', '1', 0x00, 0x00);
 
-    tl::expected<S21Presentation::GetProtocolVersionResult, S21DataLinkError> result;
+    tl::expected<S21Presentation::GetProtocolVersionResult, S21PresentationError> result;
     pres.getProtocolVersion([&](auto r) { result = r; });
 
     REQUIRE(result.has_value());
@@ -528,7 +528,7 @@ TEST_CASE("S21Presentation getProtocolVersion parses v2.0 two digits", "[s21pres
     S21Presentation pres(mock);
     mock.nextResponse = bytes('G', '8', '0', '2', 0x00, 0x00);
 
-    tl::expected<S21Presentation::GetProtocolVersionResult, S21DataLinkError> result;
+    tl::expected<S21Presentation::GetProtocolVersionResult, S21PresentationError> result;
     pres.getProtocolVersion([&](auto r) { result = r; });
 
     REQUIRE(result.has_value());
@@ -542,7 +542,7 @@ TEST_CASE("S21Presentation getProtocolVersion propagates transact error", "[s21p
     S21Presentation pres(mock);
     mock.nextError = S21DataLinkError("timeout");
 
-    tl::expected<S21Presentation::GetProtocolVersionResult, S21DataLinkError> result;
+    tl::expected<S21Presentation::GetProtocolVersionResult, S21PresentationError> result;
     pres.getProtocolVersion([&](auto r) { result = r; });
 
     REQUIRE_FALSE(result.has_value());
@@ -567,7 +567,7 @@ TEST_CASE("S21Presentation getExtendedProtocolVersion parses v3.20", "[s21pres][
     S21Presentation pres(mock);
     mock.nextResponse = bytes('G', 'Y', '0', '0', '0', '2', '3', '0');
 
-    tl::expected<S21Presentation::GetProtocolVersionResult, S21DataLinkError> result;
+    tl::expected<S21Presentation::GetProtocolVersionResult, S21PresentationError> result;
     pres.getExtendedProtocolVersion([&](auto r) { result = r; });
 
     REQUIRE(result.has_value());
@@ -581,7 +581,7 @@ TEST_CASE("S21Presentation getExtendedProtocolVersion NAK on v2 and below units"
     S21Presentation pres(mock);
     mock.nextError = S21DataLinkError("NAK");
 
-    tl::expected<S21Presentation::GetProtocolVersionResult, S21DataLinkError> result;
+    tl::expected<S21Presentation::GetProtocolVersionResult, S21PresentationError> result;
     pres.getExtendedProtocolVersion([&](auto r) { result = r; });
 
     REQUIRE_FALSE(result.has_value());
@@ -594,8 +594,114 @@ TEST_CASE("S21Presentation getExtendedProtocolVersion propagates transact error"
     S21Presentation pres(mock);
     mock.nextError = S21DataLinkError("timeout");
 
-    tl::expected<S21Presentation::GetProtocolVersionResult, S21DataLinkError> result;
+    tl::expected<S21Presentation::GetProtocolVersionResult, S21PresentationError> result;
     pres.getExtendedProtocolVersion([&](auto r) { result = r; });
 
     REQUIRE_FALSE(result.has_value());
+}
+
+// ─── wrong response code tests ────────────────────────────────────────────────
+
+TEST_CASE("S21Presentation getOperation rejects wrong response code", "[s21pres][getOp]")
+{
+    MockS21DataLink mock;
+    S21Presentation pres(mock);
+    mock.nextResponse = bytes('X', 'X', '1', '3', 'H', 'A');
+
+    tl::expected<S21Presentation::GetOperationResult, S21PresentationError> result;
+    pres.getOperation([&](auto r) { result = r; });
+
+    REQUIRE_FALSE(result.has_value());
+    REQUIRE(std::string_view(result.error().what()) == "unexpected response code");
+}
+
+TEST_CASE("S21Presentation getRoomTemperature rejects wrong response code", "[s21pres][roomTemp]")
+{
+    MockS21DataLink mock;
+    S21Presentation pres(mock);
+    mock.nextResponse = bytes('X', 'X', '5', '6', '2', '+');
+
+    tl::expected<S21Presentation::GetTemperatureResult, S21PresentationError> result;
+    pres.getRoomTemperature([&](auto r) { result = r; });
+
+    REQUIRE_FALSE(result.has_value());
+    REQUIRE(std::string_view(result.error().what()) == "unexpected response code");
+}
+
+TEST_CASE("S21Presentation getOutdoorTemperature rejects wrong response code", "[s21pres][outdoorTemp]")
+{
+    MockS21DataLink mock;
+    S21Presentation pres(mock);
+    mock.nextResponse = bytes('X', 'X', '5', '2', '0', '+');
+
+    tl::expected<S21Presentation::GetTemperatureResult, S21PresentationError> result;
+    pres.getOutdoorTemperature([&](auto r) { result = r; });
+
+    REQUIRE_FALSE(result.has_value());
+    REQUIRE(std::string_view(result.error().what()) == "unexpected response code");
+}
+
+TEST_CASE("S21Presentation getHumidity rejects wrong response code", "[s21pres][humidity]")
+{
+    MockS21DataLink mock;
+    S21Presentation pres(mock);
+    mock.nextResponse = bytes('X', 'X', '9', '7', '0');
+
+    tl::expected<S21Presentation::GetHumidityResult, S21PresentationError> result;
+    pres.getHumidity([&](auto r) { result = r; });
+
+    REQUIRE_FALSE(result.has_value());
+    REQUIRE(std::string_view(result.error().what()) == "unexpected response code");
+}
+
+TEST_CASE("S21Presentation getCoarseTemperatureAndHumidity rejects wrong response code", "[s21pres][coarseTemp]")
+{
+    MockS21DataLink mock;
+    S21Presentation pres(mock);
+    mock.nextResponse = bytes('X', 'X', 0xAC, 0xAA, 0x4E, 0x30);
+
+    tl::expected<S21Presentation::GetCoarseTemperatureAndHumidityResult, S21PresentationError> result;
+    pres.getCoarseTemperatureAndHumidity([&](auto r) { result = r; });
+
+    REQUIRE_FALSE(result.has_value());
+    REQUIRE(std::string_view(result.error().what()) == "unexpected response code");
+}
+
+TEST_CASE("S21Presentation getFanMode rejects wrong response code", "[s21pres][fanMode]")
+{
+    MockS21DataLink mock;
+    S21Presentation pres(mock);
+    mock.nextResponse = bytes('X', 'X', '7');
+
+    tl::expected<S21Presentation::GetFanModeResult, S21PresentationError> result;
+    pres.getFanMode([&](auto r) { result = r; });
+
+    REQUIRE_FALSE(result.has_value());
+    REQUIRE(std::string_view(result.error().what()) == "unexpected response code");
+}
+
+TEST_CASE("S21Presentation getProtocolVersion rejects wrong response code", "[s21pres][protVer]")
+{
+    MockS21DataLink mock;
+    S21Presentation pres(mock);
+    mock.nextResponse = bytes('X', 'X', '0', '2', 0x00, 0x00);
+
+    tl::expected<S21Presentation::GetProtocolVersionResult, S21PresentationError> result;
+    pres.getProtocolVersion([&](auto r) { result = r; });
+
+    REQUIRE_FALSE(result.has_value());
+    REQUIRE(std::string_view(result.error().what()) == "unexpected response code");
+}
+
+TEST_CASE("S21Presentation getExtendedProtocolVersion rejects wrong response code", "[s21pres][extProtVer]")
+{
+    MockS21DataLink mock;
+    S21Presentation pres(mock);
+    mock.nextResponse = bytes('X', 'X', '0', '0', '0', '2', '3', '0');
+
+    tl::expected<S21Presentation::GetProtocolVersionResult, S21PresentationError> result;
+    pres.getExtendedProtocolVersion([&](auto r) { result = r; });
+
+    REQUIRE_FALSE(result.has_value());
+    REQUIRE(std::string_view(result.error().what()) == "unexpected response code");
 }

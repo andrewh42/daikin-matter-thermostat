@@ -131,7 +131,7 @@ static int CmdS21GetOperation(const struct shell *sh, size_t argc, char **argv)
     s_shell = sh;
 
     S21Stack::Instance().GetPresentation().getOperation(
-        [](tl::expected<S21Presentation::GetOperationResult, S21DataLinkError> result) {
+        [](tl::expected<S21Presentation::GetOperationResult, S21PresentationError> result) {
             const struct shell *sh = s_shell;
             if (!result) {
                 shell_error(sh, "s21 get_operation error: %s", result.error().what());
