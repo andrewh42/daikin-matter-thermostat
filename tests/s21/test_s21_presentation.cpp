@@ -162,3 +162,216 @@ TEST_CASE("S21Presentation getOperation propagates transact error", "[s21pres][g
     REQUIRE_FALSE(result.has_value());
     REQUIRE(std::string_view(result.error().what()) == "timeout");
 }
+
+// ─── getRoomTemperature ───────────────────────────────────────────────────────
+
+TEST_CASE("S21Presentation getRoomTemperature sends RH poll", "[s21pres][roomTemp]")
+{
+    MockS21DataLink mock;
+    S21Presentation pres(mock);
+
+    mock.nextResponse = bytes(0x53, 0x48, '5', '6', '2', '+'); // SH response
+    pres.getRoomTemperature([](auto) {});
+
+    REQUIRE(mock.lastTransmitted == bytes(0x52, 0x48)); // 'R', 'H'
+}
+
+TEST_CASE("S21Presentation getRoomTemperature parses positive temp 26.5°C", "[s21pres][roomTemp]")
+{
+    // SH response: '5','6','2','+' → d0=5, d1=6, d2=2 → 5+60+200=265 (0.1°C) × 10 = 2650
+    MockS21DataLink mock;
+    S21Presentation pres(mock);
+    mock.nextResponse = bytes(0x53, 0x48, '5', '6', '2', '+');
+
+    tl::expected<S21Presentation::GetTemperatureResult, S21DataLinkError> result;
+    pres.getRoomTemperature([&](auto r) { result = r; });
+
+    REQUIRE(result.has_value());
+    REQUIRE(result.value() == 2650);
+}
+
+TEST_CASE("S21Presentation getRoomTemperature parses negative temp -5.0°C", "[s21pres][roomTemp]")
+{
+    // SH response: '0','5','0','-' → d0=0, d1=5, d2=0 → 50 (0.1°C) × 10 = 500, negative → -500
+    MockS21DataLink mock;
+    S21Presentation pres(mock);
+    mock.nextResponse = bytes(0x53, 0x48, '0', '5', '0', '-');
+
+    tl::expected<S21Presentation::GetTemperatureResult, S21DataLinkError> result;
+    pres.getRoomTemperature([&](auto r) { result = r; });
+
+    REQUIRE(result.has_value());
+    REQUIRE(result.value() == -500);
+}
+
+TEST_CASE("S21Presentation getRoomTemperature parses zero", "[s21pres][roomTemp]")
+{
+    MockS21DataLink mock;
+    S21Presentation pres(mock);
+    mock.nextResponse = bytes(0x53, 0x48, '0', '0', '0', '+');
+
+    tl::expected<S21Presentation::GetTemperatureResult, S21DataLinkError> result;
+    pres.getRoomTemperature([&](auto r) { result = r; });
+
+    REQUIRE(result.has_value());
+    REQUIRE(result.value() == 0);
+}
+
+TEST_CASE("S21Presentation getRoomTemperature propagates transact error", "[s21pres][roomTemp]")
+{
+    MockS21DataLink mock;
+    S21Presentation pres(mock);
+    mock.nextError = S21DataLinkError("timeout");
+
+    tl::expected<S21Presentation::GetTemperatureResult, S21DataLinkError> result;
+    pres.getRoomTemperature([&](auto r) { result = r; });
+
+    REQUIRE_FALSE(result.has_value());
+    REQUIRE(std::string_view(result.error().what()) == "timeout");
+}
+
+// ─── getOutdoorTemperature ────────────────────────────────────────────────────
+
+TEST_CASE("S21Presentation getOutdoorTemperature sends Ra poll", "[s21pres][outdoorTemp]")
+{
+    MockS21DataLink mock;
+    S21Presentation pres(mock);
+
+    mock.nextResponse = bytes(0x53, 0x61, '5', '2', '0', '+'); // Sa response
+    pres.getOutdoorTemperature([](auto) {});
+
+    REQUIRE(mock.lastTransmitted == bytes(0x52, 0x61)); // 'R', 'a'
+}
+
+TEST_CASE("S21Presentation getOutdoorTemperature parses 2.5°C", "[s21pres][outdoorTemp]")
+{
+    // Sa response: '5','2','0','+' → d0=5, d1=2, d2=0 → 5+20+0=25 (0.1°C) × 10 = 250
+    MockS21DataLink mock;
+    S21Presentation pres(mock);
+    mock.nextResponse = bytes(0x53, 0x61, '5', '2', '0', '+');
+
+    tl::expected<S21Presentation::GetTemperatureResult, S21DataLinkError> result;
+    pres.getOutdoorTemperature([&](auto r) { result = r; });
+
+    REQUIRE(result.has_value());
+    REQUIRE(result.value() == 250);
+}
+
+TEST_CASE("S21Presentation getOutdoorTemperature parses negative temp -10.5°C", "[s21pres][outdoorTemp]")
+{
+    // Sa response: '5','0','1','-' → d0=5, d1=0, d2=1 → 5+0+100=105 (0.1°C) × 10 = 1050, negative → -1050
+    MockS21DataLink mock;
+    S21Presentation pres(mock);
+    mock.nextResponse = bytes(0x53, 0x61, '5', '0', '1', '-');
+
+    tl::expected<S21Presentation::GetTemperatureResult, S21DataLinkError> result;
+    pres.getOutdoorTemperature([&](auto r) { result = r; });
+
+    REQUIRE(result.has_value());
+    REQUIRE(result.value() == -1050);
+}
+
+TEST_CASE("S21Presentation getOutdoorTemperature parses zero", "[s21pres][outdoorTemp]")
+{
+    MockS21DataLink mock;
+    S21Presentation pres(mock);
+    mock.nextResponse = bytes(0x53, 0x61, '0', '0', '0', '+');
+
+    tl::expected<S21Presentation::GetTemperatureResult, S21DataLinkError> result;
+    pres.getOutdoorTemperature([&](auto r) { result = r; });
+
+    REQUIRE(result.has_value());
+    REQUIRE(result.value() == 0);
+}
+
+TEST_CASE("S21Presentation getOutdoorTemperature propagates transact error", "[s21pres][outdoorTemp]")
+{
+    MockS21DataLink mock;
+    S21Presentation pres(mock);
+    mock.nextError = S21DataLinkError("timeout");
+
+    tl::expected<S21Presentation::GetTemperatureResult, S21DataLinkError> result;
+    pres.getOutdoorTemperature([&](auto r) { result = r; });
+
+    REQUIRE_FALSE(result.has_value());
+}
+
+// ─── getHumidity ─────────────────────────────────────────────────────────────
+
+TEST_CASE("S21Presentation getHumidity sends Re poll", "[s21pres][humidity]")
+{
+    MockS21DataLink mock;
+    S21Presentation pres(mock);
+
+    mock.nextResponse = bytes(0x53, 0x65, '9', '7', '0'); // Se response
+    pres.getHumidity([](auto) {});
+
+    REQUIRE(mock.lastTransmitted == bytes(0x52, 0x65)); // 'R', 'e'
+}
+
+TEST_CASE("S21Presentation getHumidity parses 79%", "[s21pres][humidity]")
+{
+    // Se response: '9','7','0' → d0=9, d1=7, d2=0 → 9+70+0 = 79
+    MockS21DataLink mock;
+    S21Presentation pres(mock);
+    mock.nextResponse = bytes(0x53, 0x65, '9', '7', '0');
+
+    tl::expected<S21Presentation::GetHumidityResult, S21DataLinkError> result;
+    pres.getHumidity([&](auto r) { result = r; });
+
+    REQUIRE(result.has_value());
+    REQUIRE(result.value() == 79);
+}
+
+TEST_CASE("S21Presentation getHumidity parses 50%", "[s21pres][humidity]")
+{
+    // Se response: '0','5','0' → d0=0, d1=5, d2=0 → 0+50+0 = 50
+    MockS21DataLink mock;
+    S21Presentation pres(mock);
+    mock.nextResponse = bytes(0x53, 0x65, '0', '5', '0');
+
+    tl::expected<S21Presentation::GetHumidityResult, S21DataLinkError> result;
+    pres.getHumidity([&](auto r) { result = r; });
+
+    REQUIRE(result.has_value());
+    REQUIRE(result.value() == 50);
+}
+
+TEST_CASE("S21Presentation getHumidity parses 0%", "[s21pres][humidity]")
+{
+    MockS21DataLink mock;
+    S21Presentation pres(mock);
+    mock.nextResponse = bytes(0x53, 0x65, '0', '0', '0');
+
+    tl::expected<S21Presentation::GetHumidityResult, S21DataLinkError> result;
+    pres.getHumidity([&](auto r) { result = r; });
+
+    REQUIRE(result.has_value());
+    REQUIRE(result.value() == 0);
+}
+
+TEST_CASE("S21Presentation getHumidity parses 100%", "[s21pres][humidity]")
+{
+    // Se response: '0','0','1' → d0=0, d1=0, d2=1 → 0+0+100 = 100
+    MockS21DataLink mock;
+    S21Presentation pres(mock);
+    mock.nextResponse = bytes(0x53, 0x65, '0', '0', '1');
+
+    tl::expected<S21Presentation::GetHumidityResult, S21DataLinkError> result;
+    pres.getHumidity([&](auto r) { result = r; });
+
+    REQUIRE(result.has_value());
+    REQUIRE(result.value() == 100);
+}
+
+TEST_CASE("S21Presentation getHumidity propagates transact error", "[s21pres][humidity]")
+{
+    MockS21DataLink mock;
+    S21Presentation pres(mock);
+    mock.nextError = S21DataLinkError("timeout");
+
+    tl::expected<S21Presentation::GetHumidityResult, S21DataLinkError> result;
+    pres.getHumidity([&](auto r) { result = r; });
+
+    REQUIRE_FALSE(result.has_value());
+}

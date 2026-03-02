@@ -9,14 +9,14 @@
 
 S21Presentation::~S21Presentation() = default;
 
-// setPoint (0.01°C units) → S21 temperature byte
-// S21 step = 0.5°C = 50 units; base '@' (0x40) = 18°C = 1800 units
+/// @brief Converts a setPoint (0.01 °C units) to an S21 temperature byte.
+/// S21 step = 0.5 °C = 50 units; base '@' (0x40) = 18 °C = 1800 units.
 static uint8_t setPointToTempByte(int16_t setPoint)
 {
     return static_cast<uint8_t>('@') + static_cast<uint8_t>((setPoint - 1800) / 50);
 }
 
-// S21 temperature byte → setPoint (0.01°C units)
+/// @brief Converts an S21 temperature byte to a setPoint (0.01 °C units).
 static int16_t tempByteToSetPoint(uint8_t tempByte)
 {
     return static_cast<int16_t>((tempByte - static_cast<uint8_t>('@')) * 50 + 1800);
@@ -47,6 +47,31 @@ void S21Presentation::setOperation(bool onOff, OperatingMode mode, int16_t setPo
             std::move(cb));
 }
 
+/// @brief Reads 3 reversed ASCII decimal digits at r[offset..offset+2].
+/// d0 is units (LSB), d1 is tens, d2 is hundreds.
+static int decodeReversedDigits(const std::vector<std::byte>& r, size_t offset)
+{
+    return (static_cast<uint8_t>(r[offset])     - '0')
+         + (static_cast<uint8_t>(r[offset + 1]) - '0') * 10
+         + (static_cast<uint8_t>(r[offset + 2]) - '0') * 100;
+}
+
+/// @brief Decodes a 4-byte reversed ASCII sensor temperature starting at r[offset].
+/// Format: d0 d1 d2 sign, where d0 is units (LSB). Value is in 0.1 °C; returns 0.01 °C.
+static int16_t decodeSensorTemp(const std::vector<std::byte>& r, size_t offset = 2)
+{
+    int val = decodeReversedDigits(r, offset);
+    bool positive = r[offset + 3] == std::byte{'+'};
+    return static_cast<int16_t>((positive ? val : -val) * 10);
+}
+
+/// @brief Decodes a 3-byte reversed ASCII humidity value starting at r[offset].
+/// Format: d0 d1 d2, where d0 is the units digit (LSB). Returns percentage.
+static uint8_t decodeHumidity(const std::vector<std::byte>& r, size_t offset = 2)
+{
+    return static_cast<uint8_t>(decodeReversedDigits(r, offset));
+}
+
 void S21Presentation::getOperation(GetOperationCallback cb)
 {
     m_dataLink.transact({std::byte{'F'}, std::byte{'1'}},
@@ -62,5 +87,41 @@ void S21Presentation::getOperation(GetOperationCallback cb)
                             FanMode fanMode = static_cast<FanMode>(static_cast<uint8_t>((*response)[5]));
 
                             cb(std::make_tuple(onOff, mode, setPoint, fanMode));
+                        });
+}
+
+void S21Presentation::getRoomTemperature(GetTemperatureCallback cb)
+{
+    m_dataLink.transact({std::byte{'R'}, std::byte{'H'}},
+                        [cb = std::move(cb)](tl::expected<std::vector<std::byte>, S21DataLinkError> response) {
+                            if (!response) {
+                                cb(tl::unexpected(response.error()));
+                                return;
+                            }
+                            cb(decodeSensorTemp(*response));
+                        });
+}
+
+void S21Presentation::getOutdoorTemperature(GetTemperatureCallback cb)
+{
+    m_dataLink.transact({std::byte{'R'}, std::byte{'a'}},
+                        [cb = std::move(cb)](tl::expected<std::vector<std::byte>, S21DataLinkError> response) {
+                            if (!response) {
+                                cb(tl::unexpected(response.error()));
+                                return;
+                            }
+                            cb(decodeSensorTemp(*response));
+                        });
+}
+
+void S21Presentation::getHumidity(GetHumidityCallback cb)
+{
+    m_dataLink.transact({std::byte{'R'}, std::byte{'e'}},
+                        [cb = std::move(cb)](tl::expected<std::vector<std::byte>, S21DataLinkError> response) {
+                            if (!response) {
+                                cb(tl::unexpected(response.error()));
+                                return;
+                            }
+                            cb(decodeHumidity(*response));
                         });
 }

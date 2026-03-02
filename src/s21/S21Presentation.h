@@ -57,6 +57,24 @@ class S21Presentation {
     /// @param cb callback invoked with (onOff, mode, setPoint, fanMode) on success, or an error.
     void getOperation(GetOperationCallback cb);
 
+    using GetTemperatureResult = int16_t; // 0.01 °C units
+    using GetTemperatureCallback = std::function<void(tl::expected<GetTemperatureResult, S21DataLinkError>)>;
+
+    using GetHumidityResult = uint8_t; // percentage 0–100
+    using GetHumidityCallback = std::function<void(tl::expected<GetHumidityResult, S21DataLinkError>)>;
+
+    /// @brief Reads the room (indoor) temperature from the AC sensor.
+    /// @param cb callback invoked with temperature in 0.01 °C units on success, or an error.
+    void getRoomTemperature(GetTemperatureCallback cb);
+
+    /// @brief Reads the outdoor temperature from the AC sensor.
+    /// @param cb callback invoked with temperature in 0.01 °C units on success, or an error.
+    void getOutdoorTemperature(GetTemperatureCallback cb);
+
+    /// @brief Reads the indoor relative humidity from the AC sensor.
+    /// @param cb callback invoked with humidity percentage (0–100) on success, or an error.
+    void getHumidity(GetHumidityCallback cb);
+
   private:
     S21DataLink& m_dataLink;
 };
