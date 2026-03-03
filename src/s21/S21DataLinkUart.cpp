@@ -14,7 +14,7 @@
 
 #include <cstring>
 
-LOG_MODULE_REGISTER(s21_uart, CONFIG_CHIP_APP_LOG_LEVEL);
+LOG_MODULE_REGISTER(s21_uart, LOG_LEVEL_DBG);
 
 S21DataLinkUart::S21DataLinkUart(NRF_UARTE_Type* uarte)
         : m_uarte(uarte)
@@ -277,8 +277,10 @@ void S21DataLinkUart::isrHandler(const void* arg)
         std::memcpy(result.data, self->m_rxBuf, result.len);
         result.status = timeout ? RxStatus::Timeout : RxStatus::Ok;
 
-        /* For transact operations with a valid frame, send ACK back to the AC. */
-        if (!timeout && self->m_opType.load(std::memory_order_relaxed) == OpType::Transact) {
+        /* For transact operations with a valid frame (not a NAK), send ACK back to the AC. */
+        bool nakReceived = uarte->EVENTS_DMA.RX.MATCH[kMatchIdxNAK] > 0;
+        bool sendingAck = !timeout && !nakReceived && self->m_opType.load(std::memory_order_relaxed) == OpType::Transact;
+        if (sendingAck) {
             LOG_DBG("S21DataLinkUart: sending ACK for transact response");
 
             uint32_t domain_id = nrfx_gppi_domain_id_get((uint32_t)uarte);
@@ -291,13 +293,23 @@ void S21DataLinkUart::isrHandler(const void* arg)
         }
 
         k_msgq_put(&self->m_rxMsgq, &result, K_NO_WAIT);
-        k_work_submit(&self->m_completionWork.work);
+        /* When ACK is being transmitted, defer k_work_submit to the ENDTX
+         * handler so that Ch A (ENDTX→STARTRX) is re-enabled *before* the
+         * completion callback runs.  This prevents a new transaction from
+         * calling STARTTX while Ch A is still disabled. */
+        if (!sendingAck) {
+            k_work_submit(&self->m_completionWork.work);
+        }
     }
 
     if (nrf_uarte_event_check(uarte, NRF_UARTE_EVENT_ERROR)) {
         nrf_uarte_event_clear(uarte, NRF_UARTE_EVENT_ERROR);
         uint32_t errSrc = nrf_uarte_errorsrc_get_and_clear(uarte);
-        LOG_ERR("UARTE error: 0x%08x", errSrc);
+        LOG_ERR("UARTE RX error source: 0x%08x %s%s%s%s", errSrc,
+            (errSrc & UARTE_ERRORSRC_OVERRUN_Msk) ? "overrun " : "",
+            (errSrc & UARTE_ERRORSRC_PARITY_Msk) ? "parity " : "",
+            (errSrc & UARTE_ERRORSRC_FRAMING_Msk) ? "framing " : "",
+            (errSrc & UARTE_ERRORSRC_BREAK_Msk) ? "break " : "");
 
         /* Stop any ongoing RX. */
         nrf_uarte_task_trigger(uarte, NRF_UARTE_TASK_STOPRX);
@@ -314,12 +326,16 @@ void S21DataLinkUart::isrHandler(const void* arg)
         nrf_uarte_event_clear(uarte, NRF_UARTE_EVENT_FRAME_TIMEOUT);
     }
 
-    /* ENDTX — ACK byte transmitted; re-enable Ch A (ENDTX→STARTRX) for next transaction. */
+    /* ENDTX — ACK byte transmitted.
+     * Re-enable Ch A (ENDTX→STARTRX) *before* notifying the completion
+     * handler so that a new transaction can safely call STARTTX immediately
+     * from within the callback without racing against the Ch A enable. */
     if (nrf_uarte_event_check(uarte, NRF_UARTE_EVENT_ENDTX)) {
         nrf_uarte_event_clear(uarte, NRF_UARTE_EVENT_ENDTX);
         nrf_uarte_int_disable(uarte, NRF_UARTE_INT_ENDTX_MASK);
         uint32_t domain_id = nrfx_gppi_domain_id_get((uint32_t)uarte);
         nrfx_gppi_channels_enable(domain_id, BIT(self->mGppiChTxRx));
+        k_work_submit(&self->m_completionWork.work);
     }
 }
 
