@@ -95,7 +95,7 @@ Build:
 west build -p -d build-integration-s21uart \
   -b xiao_nrf54l15/nrf54l15/cpuapp \
   tests/integration/s21_datalink_uart \
-  -- -DFILE_SUFFIX=internal -DCONFIG_NRFX_GPPI=y -DCONFIG_DYNAMIC_INTERRUPTS=y
+  -- -DFILE_SUFFIX=internal
 ```
 
 Flash and observe test results over the serial console:

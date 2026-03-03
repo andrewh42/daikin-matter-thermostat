@@ -8,6 +8,13 @@
  * Usage:
  *   s21 get_operation
  *   s21 set_operation <on|off> <mode> <setpoint_C> <fanmode>
+ *   s21 get_room_temp
+ *   s21 get_outdoor_temp
+ *   s21 get_humidity
+ *   s21 get_coarse
+ *   s21 get_fan_mode
+ *   s21 get_protocol_version
+ *   s21 get_extended_protocol_version
  *
  * Mode strings:     auto_cool | auto | dry | cool | heat | fan | auto_heat
  * Fan mode strings: low | midlow | medium | midhigh | high | auto | quiet
@@ -124,6 +131,15 @@ const char *fanModeStr(FanMode f)
     }
 }
 
+static void printTemp(const struct shell *sh, const char *label, int16_t t)
+{
+    int v = static_cast<int>(t);
+    shell_print(sh, "%s%s%d.%02d degC", label,
+        v < 0 ? "-" : "",
+        abs(v / 100),
+        abs(v % 100));
+}
+
 /* ── Command handlers ─────────────────────────────────────────────── */
 
 static int CmdS21GetOperation(const struct shell *sh, size_t argc, char **argv)
@@ -186,6 +202,130 @@ static int CmdS21SetOperation(const struct shell *sh, size_t argc, char **argv)
     return 0;
 }
 
+static int CmdS21GetRoomTemperature(const struct shell *sh, size_t argc, char **argv)
+{
+    s_shell = sh;
+
+    S21Stack::Instance().GetPresentation().getRoomTemperature(
+        [](tl::expected<S21Presentation::GetTemperatureResult, S21PresentationError> result) {
+            const struct shell *sh = s_shell;
+            if (!result) {
+                shell_error(sh, "s21 get_room_temp error: %s", result.error().what());
+                return;
+            }
+            printTemp(sh, "room:     ", *result);
+        });
+
+    return 0;
+}
+
+static int CmdS21GetOutdoorTemperature(const struct shell *sh, size_t argc, char **argv)
+{
+    s_shell = sh;
+
+    S21Stack::Instance().GetPresentation().getOutdoorTemperature(
+        [](tl::expected<S21Presentation::GetTemperatureResult, S21PresentationError> result) {
+            const struct shell *sh = s_shell;
+            if (!result) {
+                shell_error(sh, "s21 get_outdoor_temp error: %s", result.error().what());
+                return;
+            }
+            printTemp(sh, "outdoor:  ", *result);
+        });
+
+    return 0;
+}
+
+static int CmdS21GetHumidity(const struct shell *sh, size_t argc, char **argv)
+{
+    s_shell = sh;
+
+    S21Stack::Instance().GetPresentation().getHumidity(
+        [](tl::expected<S21Presentation::GetHumidityResult, S21PresentationError> result) {
+            const struct shell *sh = s_shell;
+            if (!result) {
+                shell_error(sh, "s21 get_humidity error: %s", result.error().what());
+                return;
+            }
+            shell_print(sh, "humidity: %u %%", static_cast<unsigned>(*result));
+        });
+
+    return 0;
+}
+
+static int CmdS21GetCoarse(const struct shell *sh, size_t argc, char **argv)
+{
+    s_shell = sh;
+
+    S21Stack::Instance().GetPresentation().getCoarseTemperatureAndHumidity(
+        [](tl::expected<S21Presentation::GetCoarseTemperatureAndHumidityResult, S21PresentationError> result) {
+            const struct shell *sh = s_shell;
+            if (!result) {
+                shell_error(sh, "s21 get_coarse error: %s", result.error().what());
+                return;
+            }
+            auto [indoor, outdoor, humidity] = *result;
+            printTemp(sh, "room:     ", indoor);
+            printTemp(sh, "outdoor:  ", outdoor);
+            shell_print(sh, "humidity: %u %%", static_cast<unsigned>(humidity));
+        });
+
+    return 0;
+}
+
+static int CmdS21GetFanMode(const struct shell *sh, size_t argc, char **argv)
+{
+    s_shell = sh;
+
+    S21Stack::Instance().GetPresentation().getFanMode(
+        [](tl::expected<S21Presentation::GetFanModeResult, S21PresentationError> result) {
+            const struct shell *sh = s_shell;
+            if (!result) {
+                shell_error(sh, "s21 get_fan_mode error: %s", result.error().what());
+                return;
+            }
+            shell_print(sh, "fan:      %s", fanModeStr(*result));
+        });
+
+    return 0;
+}
+
+static int CmdS21GetProtocolVersion(const struct shell *sh, size_t argc, char **argv)
+{
+    s_shell = sh;
+
+    S21Stack::Instance().GetPresentation().getProtocolVersion(
+        [](tl::expected<S21Presentation::GetProtocolVersionResult, S21PresentationError> result) {
+            const struct shell *sh = s_shell;
+            if (!result) {
+                shell_error(sh, "s21 get_protocol_version error: %s", result.error().what());
+                return;
+            }
+            auto [major, minor] = *result;
+            shell_print(sh, "version:  %u.%u", static_cast<unsigned>(major), static_cast<unsigned>(minor));
+        });
+
+    return 0;
+}
+
+static int CmdS21GetExtendedProtocolVersion(const struct shell *sh, size_t argc, char **argv)
+{
+    s_shell = sh;
+
+    S21Stack::Instance().GetPresentation().getExtendedProtocolVersion(
+        [](tl::expected<S21Presentation::GetProtocolVersionResult, S21PresentationError> result) {
+            const struct shell *sh = s_shell;
+            if (!result) {
+                shell_error(sh, "s21 get_extended_protocol_version error: %s", result.error().what());
+                return;
+            }
+            auto [major, minor] = *result;
+            shell_print(sh, "version:  %u.%u", static_cast<unsigned>(major), static_cast<unsigned>(minor));
+        });
+
+    return 0;
+}
+
 } // namespace
 
 /* ── Shell registration ───────────────────────────────────────────── */
@@ -202,6 +342,34 @@ SHELL_STATIC_SUBCMD_SET_CREATE(sub_s21,
         "  setpoint: integer degrees C (10-32)\n"
         "  fanmode:  low|midlow|medium|midhigh|high|auto|quiet\n",
         CmdS21SetOperation, 5, 0),
+    SHELL_CMD_ARG(get_room_temp, NULL,
+        "Read indoor temperature sensor (async).\n"
+        "Usage: s21 get_room_temp\n",
+        CmdS21GetRoomTemperature, 1, 0),
+    SHELL_CMD_ARG(get_outdoor_temp, NULL,
+        "Read outdoor temperature sensor (async).\n"
+        "Usage: s21 get_outdoor_temp\n",
+        CmdS21GetOutdoorTemperature, 1, 0),
+    SHELL_CMD_ARG(get_humidity, NULL,
+        "Read indoor relative humidity sensor (async).\n"
+        "Usage: s21 get_humidity\n",
+        CmdS21GetHumidity, 1, 0),
+    SHELL_CMD_ARG(get_coarse, NULL,
+        "Read coarse indoor/outdoor temperature and humidity (async).\n"
+        "Usage: s21 get_coarse\n",
+        CmdS21GetCoarse, 1, 0),
+    SHELL_CMD_ARG(get_fan_mode, NULL,
+        "Read current fan mode (async).\n"
+        "Usage: s21 get_fan_mode\n",
+        CmdS21GetFanMode, 1, 0),
+    SHELL_CMD_ARG(get_protocol_version, NULL,
+        "Read S21 protocol version via legacy F8 command (async).\n"
+        "Usage: s21 get_protocol_version\n",
+        CmdS21GetProtocolVersion, 1, 0),
+    SHELL_CMD_ARG(get_extended_protocol_version, NULL,
+        "Read S21 protocol version via FY00 command; v3+ units only (async).\n"
+        "Usage: s21 get_extended_protocol_version\n",
+        CmdS21GetExtendedProtocolVersion, 1, 0),
     SHELL_SUBCMD_SET_END
 );
 
