@@ -2,7 +2,7 @@
  * SPDX-License-Identifier: LicenseRef-Apache-2.0
  */
 
-#include "S21Frame.h"
+#include "s21_frame.h"
 
 #include <cstdint>
 

@@ -19,8 +19,8 @@ set(SRC_DIR ${CMAKE_SOURCE_DIR}/../src)
 add_executable(s21_tests
     s21/test_s21_frame.cpp
     s21/test_s21_presentation.cpp
-    ${SRC_DIR}/s21/S21Frame.cpp
-    ${SRC_DIR}/s21/S21Presentation.cpp
+    ${SRC_DIR}/s21/s21_frame.cpp
+    ${SRC_DIR}/s21/s21_presentation.cpp
 )
 
 target_include_directories(s21_tests PRIVATE

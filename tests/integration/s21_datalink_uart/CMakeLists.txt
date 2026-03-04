@@ -9,8 +9,8 @@ project(s21_datalink_uart_test)
 
 target_sources(app PRIVATE
   src/main.cpp
-  ${CMAKE_CURRENT_SOURCE_DIR}/../../../src/s21/S21DataLinkUart.cpp
-  ${CMAKE_CURRENT_SOURCE_DIR}/../../../src/s21/S21Frame.cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/../../../src/s21/s21_datalink_uart.cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/../../../src/s21/s21_frame.cpp
 )
 
 target_include_directories(app PRIVATE

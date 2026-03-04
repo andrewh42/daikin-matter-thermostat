@@ -32,8 +32,8 @@
  *     so s_shell cannot be overwritten before the callback fires
  */
 
-#include "S21Presentation.h"
-#include "S21Stack.h"
+#include "s21_presentation.h"
+#include "s21_stack.h"
 
 #include <zephyr/shell/shell.h>
 #include <zephyr/logging/log.h>

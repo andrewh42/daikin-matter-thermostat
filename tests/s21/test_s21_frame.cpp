@@ -4,7 +4,7 @@
 
 #include <catch2/catch_test_macros.hpp>
 
-#include "S21Frame.h"
+#include "s21_frame.h"
 
 // Helper: build a std::vector<std::byte> from a braced list of integer literals.
 template<typename... Args>

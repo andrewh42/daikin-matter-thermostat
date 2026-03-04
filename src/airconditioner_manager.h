@@ -5,7 +5,7 @@
  */
 #pragma once
 
-#include "s21/S21Presentation.h"
+#include "s21/s21_presentation.h"
 
 #include <stdbool.h>
 #include <stdint.h>

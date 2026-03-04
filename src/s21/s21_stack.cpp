@@ -2,7 +2,7 @@
  * SPDX-License-Identifier: LicenseRef-Apache-2.0
  */
 
-#include "S21Stack.h"
+#include "s21_stack.h"
 #include "s21_pinconfig.h"
 
 #include <zephyr/logging/log.h>

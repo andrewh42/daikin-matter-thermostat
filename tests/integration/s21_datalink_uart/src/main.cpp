@@ -12,8 +12,8 @@
 #include <zephyr/ztest.h>
 #include <zephyr/kernel.h>
 
-#include "s21/S21DataLinkUart.h"
-#include "s21/S21Frame.h"
+#include "s21/s21_datalink_uart.h"
+#include "s21/s21_frame.h"
 #include "s21/s21_pinconfig.h"
 
 #include <hal/nrf_uarte.h>

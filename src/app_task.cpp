@@ -8,7 +8,7 @@
 
 #include "temp_sensor_manager.h"
 #include "airconditioner_manager.h"
-#include "s21/S21Stack.h"
+#include "s21/s21_stack.h"
 
 #include "app/matter_init.h"
 #include "app/task_executor.h"

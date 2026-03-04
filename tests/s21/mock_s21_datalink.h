@@ -4,7 +4,7 @@
 
 #pragma once
 
-#include "S21DataLink.h"
+#include "s21_datalink.h"
 #include <optional>
 #include <vector>
 

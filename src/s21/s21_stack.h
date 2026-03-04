@@ -2,8 +2,8 @@
  * SPDX-License-Identifier: LicenseRef-Apache-2.0
  */
 
-#include "S21DataLinkUart.h"
-#include "S21Presentation.h"
+#include "s21_datalink_uart.h"
+#include "s21_presentation.h"
 
 class S21Stack {
   public:
