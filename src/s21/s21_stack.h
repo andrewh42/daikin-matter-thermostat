@@ -3,7 +3,9 @@
  */
 
 #include "s21_datalink_uart.h"
+#include "s21_manager.h"
 #include "s21_presentation.h"
+#include "s21_presentation_sync_adapter.h"
 
 class S21Stack {
   public:
@@ -23,7 +25,14 @@ class S21Stack {
         return mPresentation;
     }
 
+    S21Manager& GetManager()
+    {
+        return mManager;
+    }
+
   private:
-    S21DataLinkUart mDataLink;
-    S21Presentation mPresentation;
+    S21DataLinkUart            mDataLink;
+    S21Presentation            mPresentation;
+    S21PresentationSyncAdapter mSyncAdapter;
+    S21Manager                 mManager;
 };

@@ -36,6 +36,7 @@ target_sources(app PRIVATE
   src/main.cpp
   src/s21/s21_datalink_uart.cpp
   src/s21/s21_frame.cpp
+  src/s21/s21_manager.cpp
   src/s21/s21_presentation.cpp
   src/s21/s21_presentation_sync_adapter.cpp
   src/s21/s21_shell.cpp

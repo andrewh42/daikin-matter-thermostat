@@ -9,9 +9,15 @@
 
 LOG_MODULE_DECLARE(app, CONFIG_MATTER_LOG_LEVEL);
 
+static constexpr auto kS21CacheMaxAge = std::chrono::seconds{10};
+
 S21Stack::S21Stack()
         : mDataLink(NRF_UARTE21)
         , mPresentation(mDataLink)
+        , mSyncAdapter(mPresentation)
+        , mManager(mSyncAdapter, kS21CacheMaxAge, [] {
+              return S21Manager::TimePoint(std::chrono::milliseconds(k_uptime_get()));
+          })
 {
 }
 
@@ -23,5 +29,6 @@ int S21Stack::Init()
         return err;
     }
 
+    mManager.Init();
     return 0;
 }

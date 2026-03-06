@@ -31,3 +31,17 @@ target_include_directories(s21_tests PRIVATE
 
 target_link_libraries(s21_tests PRIVATE Catch2::Catch2WithMain)
 catch_discover_tests(s21_tests)
+
+add_executable(s21_manager_tests
+    s21/test_s21_manager.cpp
+    ${SRC_DIR}/s21/s21_manager.cpp
+)
+
+target_include_directories(s21_manager_tests PRIVATE
+    ${SRC_DIR}/s21
+    ${CMAKE_SOURCE_DIR}/s21
+    ${CMAKE_SOURCE_DIR}/../third_party
+)
+
+target_link_libraries(s21_manager_tests PRIVATE Catch2::Catch2WithMain)
+catch_discover_tests(s21_manager_tests)
