@@ -103,15 +103,23 @@ void AirConditionerManager::PollWorkHandler(k_work* work)
     if (!indoor)  LOG_WRN("getRoomTemperature failed: %s",    indoor.error().message);
     if (!outdoor) LOG_WRN("getOutdoorTemperature failed: %s", outdoor.error().message);
 
-    if (indoor || outdoor) {
-        std::optional<int16_t> indoorVal  = indoor  ? std::optional(*indoor)  : std::nullopt;
-        std::optional<int16_t> outdoorVal = outdoor ? std::optional(*outdoor) : std::nullopt;
+    bool indoorChanged  = indoor  && (self.mLocalTempCelsius.IsNull()   || self.mLocalTempCelsius.Value()   != *indoor);
+    bool outdoorChanged = outdoor && (self.mOutdoorTempCelsius.IsNull()  || self.mOutdoorTempCelsius.Value() != *outdoor);
+
+    if (indoorChanged || outdoorChanged) {
+        if (indoorChanged)  self.mLocalTempCelsius.SetNonNull(*indoor);
+        if (outdoorChanged) self.mOutdoorTempCelsius.SetNonNull(*outdoor);
+
+        std::optional<int16_t> indoorVal  = indoorChanged  ? std::optional(*indoor)  : std::nullopt;
+        std::optional<int16_t> outdoorVal = outdoorChanged ? std::optional(*outdoor) : std::nullopt;
         Nrf::PostTask([indoorVal, outdoorVal] {
             PlatformMgr().LockChipStack();
             if (indoorVal)  LocalTemperature::Set(kThermostatEndpoint, *indoorVal);
             if (outdoorVal) OutdoorTemperature::Set(kThermostatEndpoint, *outdoorVal);
             PlatformMgr().UnlockChipStack();
         });
+    } else {
+        LOG_DBG("S21 temperatures unchanged, not updating attributes");
     }
 
     k_work_reschedule_for_queue(&self.mS21WorkQueue, &self.mPollWork, K_SECONDS(kS21PollIntervalSec));
@@ -232,18 +240,10 @@ void AirConditionerManager::OnOffAttributeChangeHandler(AttributeId attributeId,
 
 void AirConditionerManager::TemperatureAttributeChangeHandler(AttributeId attributeId, uint8_t* value, uint16_t size)
 {
-    Status status;
-
     switch (attributeId) {
-    case LocalTemperature::Id: {
-        status = LocalTemperature::Get(kThermostatEndpoint, mLocalTempCelsius);
-        VerifyOrReturn(Status::Success == status, LOG_ERR("Failed to get Thermostat LocalTemperature attribute"));
-    } break;
-
-    case OutdoorTemperature::Id: {
-        status = OutdoorTemperature::Get(kThermostatEndpoint, mOutdoorTempCelsius);
-        VerifyOrReturn(Status::Success == status, LOG_ERR("Failed to get Thermostat OutdoorTemperature attribute"));
-    } break;
+    case LocalTemperature::Id:
+    case OutdoorTemperature::Id:
+        break; // updated by PollWorkHandler on the S21 work queue thread
 
     case OccupiedCoolingSetpoint::Id: {
         mCoolingCelsiusSetPoint = *reinterpret_cast<int16_t*>(value);
