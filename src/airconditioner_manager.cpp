@@ -144,8 +144,8 @@ void AirConditionerManager::PollOperation()
 
     bool onOffChanged   = (onOff != mOnOff);
     bool modeChanged    = (systemMode != mThermMode);
-    bool coolingChanged = (mode == OperatingMode::Cool) && (setpoint != mCoolingCelsiusSetPoint);
-    bool heatingChanged = (mode == OperatingMode::Heat) && (setpoint != mHeatingCelsiusSetPoint);
+    bool coolingChanged = (mode == OperatingMode::Cool || mode == OperatingMode::Auto_Cooling || mode == OperatingMode::Auto) && (setpoint != mCoolingCelsiusSetPoint);
+    bool heatingChanged = (mode == OperatingMode::Heat || mode == OperatingMode::Auto_Heating || mode == OperatingMode::Auto) && (setpoint != mHeatingCelsiusSetPoint);
 
     if (!onOffChanged && !modeChanged && !coolingChanged && !heatingChanged) {
         LOG_DBG("S21 operation unchanged, not updating attributes");
