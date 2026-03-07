@@ -2559,6 +2559,21 @@ cluster TemperatureMeasurement = 1026 {
   readonly attribute int16u clusterRevision = 65533;
 }
 
+/** Attributes and commands for configuring the measurement of relative humidity, and reporting relative humidity measurements. */
+cluster RelativeHumidityMeasurement = 1029 {
+  revision 3;
+
+  readonly attribute nullable int16u measuredValue = 0;
+  readonly attribute nullable int16u minMeasuredValue = 1;
+  readonly attribute nullable int16u maxMeasuredValue = 2;
+  readonly attribute optional int16u tolerance = 3;
+  readonly attribute command_id generatedCommandList[] = 65528;
+  readonly attribute command_id acceptedCommandList[] = 65529;
+  readonly attribute attrib_id attributeList[] = 65531;
+  readonly attribute bitmap32 featureMap = 65532;
+  readonly attribute int16u clusterRevision = 65533;
+}
+
 endpoint 0 {
   device type ma_rootdevice = 22, version 4;
   device type ma_otarequestor = 18, version 1;
@@ -2953,18 +2968,18 @@ endpoint 1 {
   server cluster Thermostat {
     ram      attribute localTemperature;
     ram      attribute outdoorTemperature;
-    ram      attribute absMinHeatSetpointLimit default = 1500;
-    ram      attribute absMaxHeatSetpointLimit default = 2800;
-    ram      attribute absMinCoolSetpointLimit default = 1600;
+    ram      attribute absMinHeatSetpointLimit default = 1000;
+    ram      attribute absMaxHeatSetpointLimit default = 3000;
+    ram      attribute absMinCoolSetpointLimit default = 1800;
     ram      attribute absMaxCoolSetpointLimit default = 3200;
     ram      attribute HVACSystemTypeConfiguration default = 0x10;
-    ram      attribute occupiedCoolingSetpoint default = 2600;
+    ram      attribute occupiedCoolingSetpoint default = 2500;
     ram      attribute occupiedHeatingSetpoint default = 2000;
     ram      attribute minHeatSetpointLimit default = 1500;
     ram      attribute maxHeatSetpointLimit default = 2800;
     ram      attribute minCoolSetpointLimit default = 1600;
     ram      attribute maxCoolSetpointLimit default = 3200;
-    ram      attribute minSetpointDeadBand default = 20;
+    ram      attribute minSetpointDeadBand default = 0;
     ram      attribute controlSequenceOfOperation default = 4;
     ram      attribute systemMode default = 0;
     ram      attribute ACType default = 4;
@@ -2993,5 +3008,46 @@ endpoint 1 {
     callback attribute attributeList;
     ram      attribute featureMap default = 0x07;
     ram      attribute clusterRevision default = 5;
+  }
+}
+endpoint 2 {
+  device type ma_humiditysensor = 775, version 1;
+
+
+  server cluster Identify {
+    callback attribute identifyTime;
+    callback attribute identifyType;
+    callback attribute generatedCommandList;
+    callback attribute acceptedCommandList;
+    callback attribute attributeList;
+    callback attribute featureMap;
+    callback attribute clusterRevision;
+
+    handle command Identify;
+    handle command TriggerEffect;
+  }
+
+  server cluster Descriptor {
+    callback attribute deviceTypeList;
+    callback attribute serverList;
+    callback attribute clientList;
+    callback attribute partsList;
+    callback attribute generatedCommandList;
+    callback attribute acceptedCommandList;
+    callback attribute attributeList;
+    callback attribute featureMap;
+    callback attribute clusterRevision;
+  }
+
+  server cluster RelativeHumidityMeasurement {
+    ram      attribute measuredValue;
+    ram      attribute minMeasuredValue default = 0;
+    ram      attribute maxMeasuredValue default = 10000;
+    ram      attribute tolerance default = 100;
+    callback attribute generatedCommandList;
+    callback attribute acceptedCommandList;
+    callback attribute attributeList;
+    ram      attribute featureMap default = 0;
+    ram      attribute clusterRevision default = 3;
   }
 }
