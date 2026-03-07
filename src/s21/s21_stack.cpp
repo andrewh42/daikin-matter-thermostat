@@ -29,6 +29,5 @@ int S21Stack::Init()
         return err;
     }
 
-    mManager.Init();
     return 0;
 }

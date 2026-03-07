@@ -5,10 +5,13 @@
  */
 
 #include "airconditioner_manager.h"
+#include "app/task_executor.h"
 #include <app-common/zap-generated/cluster-objects.h>
 #include <platform/PlatformManager.h>
 #include <zephyr/drivers/gpio.h>
 #include <zephyr/logging/log.h>
+
+#include <optional>
 
 LOG_MODULE_DECLARE(app, CONFIG_CHIP_APP_LOG_LEVEL);
 
@@ -20,6 +23,8 @@ using namespace chip::app::Clusters::Thermostat::Attributes;
 using namespace Protocols::InteractionModel;
 
 constexpr EndpointId kThermostatEndpoint = 1;
+
+K_THREAD_STACK_DEFINE(sS21WorkQueueStack, 2048);
 
 namespace {
 static const struct gpio_dt_spec led0 = GPIO_DT_SPEC_GET(DT_ALIAS(led0), gpios);
@@ -41,9 +46,9 @@ uint8_t ReturnRemainderValue(int16_t Value)
 
 } /* namespace */
 
-CHIP_ERROR AirConditionerManager::Init(S21Presentation& s21Presentation)
+CHIP_ERROR AirConditionerManager::Init(S21Manager& s21Manager)
 {
-    mS21Presentation = &s21Presentation;
+    mS21Manager = &s21Manager;
 
     ReturnErrorOnFailure(InitLed());
 
@@ -65,9 +70,72 @@ CHIP_ERROR AirConditionerManager::Init(S21Presentation& s21Presentation)
 exit:
     PlatformMgr().UnlockChipStack();
 
-    LOG_DBG("AirConditionerManager %s", err == CHIP_NO_ERROR ? "initialised successfully" : "initialisation FAILED");
+    if (err != CHIP_NO_ERROR) {
+        LOG_DBG("AirConditionerManager initialisation FAILED");
+        return err;
+    }
 
-    return err;
+    k_work_queue_start(&mS21WorkQueue, sS21WorkQueueStack, K_THREAD_STACK_SIZEOF(sS21WorkQueueStack),
+                   K_PRIO_PREEMPT(5), NULL);
+    k_work_init_delayable(&mPollWork, PollWorkHandler);
+    k_work_init_delayable(&mInitRetryWork, InitRetryWorkHandler);
+
+    if (mS21Manager->Init() == 0) {
+        k_work_reschedule_for_queue(&mS21WorkQueue, &mPollWork, K_SECONDS(kS21PollIntervalSec));
+    }
+    else {
+        LOG_DBG("S21Manager initialisation failed, will retry initialisation in %d ms", mInitRetryIntervalMs);
+        k_work_reschedule_for_queue(&mS21WorkQueue, &mInitRetryWork, K_MSEC(mInitRetryIntervalMs));
+    }
+
+    LOG_DBG("AirConditionerManager initialised successfully");
+    return CHIP_NO_ERROR;
+}
+
+void AirConditionerManager::PollWorkHandler(k_work* work)
+{
+    auto* dwork = k_work_delayable_from_work(work);
+    auto& self  = *CONTAINER_OF(dwork, AirConditionerManager, mPollWork);
+
+    auto indoor  = self.mS21Manager->getRoomTemperature();
+    auto outdoor = self.mS21Manager->getOutdoorTemperature();
+
+    if (!indoor)  LOG_WRN("getRoomTemperature failed: %s",    indoor.error().message);
+    if (!outdoor) LOG_WRN("getOutdoorTemperature failed: %s", outdoor.error().message);
+
+    if (indoor || outdoor) {
+        std::optional<int16_t> indoorVal  = indoor  ? std::optional(*indoor)  : std::nullopt;
+        std::optional<int16_t> outdoorVal = outdoor ? std::optional(*outdoor) : std::nullopt;
+        Nrf::PostTask([indoorVal, outdoorVal] {
+            PlatformMgr().LockChipStack();
+            if (indoorVal)  LocalTemperature::Set(kThermostatEndpoint, *indoorVal);
+            if (outdoorVal) OutdoorTemperature::Set(kThermostatEndpoint, *outdoorVal);
+            PlatformMgr().UnlockChipStack();
+        });
+    }
+
+    k_work_reschedule_for_queue(&self.mS21WorkQueue, &self.mPollWork, K_SECONDS(kS21PollIntervalSec));
+}
+
+void AirConditionerManager::InitRetryWorkHandler(k_work* work)
+{
+    auto* dwork = k_work_delayable_from_work(work);
+    auto& self  = *CONTAINER_OF(dwork, AirConditionerManager, mInitRetryWork);
+
+    LOG_DBG("Retrying S21Manager::Init()");
+    int err = self.mS21Manager->Init();
+    LOG_DBG("S21Manager::Init() returned %d, isReady=%s", err, self.mS21Manager->isReady() ? "true" : "false");
+
+    if (err == 0) {
+        __ASSERT(self.mS21Manager->isReady(), "S21Manager::Init() succeeded but manager is not ready");
+        LOG_DBG("S21Manager is ready, starting polling work");
+        k_work_reschedule_for_queue(&self.mS21WorkQueue, &self.mPollWork, K_SECONDS(kS21PollIntervalSec));
+    }
+    else {
+        LOG_DBG("S21Manager initialisation failed, will retry in %d ms", self.mInitRetryIntervalMs);
+        k_work_reschedule_for_queue(&self.mS21WorkQueue, &self.mInitRetryWork, K_MSEC(self.mInitRetryIntervalMs));
+        self.mInitRetryIntervalMs = MIN(self.mInitRetryIntervalMs * 2, kS21InitRetryMaximumIntervalMilliSec);
+    }
 }
 
 CHIP_ERROR AirConditionerManager::InitLed()

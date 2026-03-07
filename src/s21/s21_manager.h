@@ -6,10 +6,6 @@
 
 #include "s21_presentation_sync.h"
 
-#ifdef __ZEPHYR__
-#include <zephyr/logging/log.h>
-#endif
-
 #include <chrono>
 #include <functional>
 #include <optional>
@@ -117,19 +113,9 @@ class S21Manager {
         int           failureCount = 0;
         static constexpr int kThreshold = 3;
 
-        bool isUnsupported() const { return status == CommandStatus::Unsupported; }
-
-        void recordSuccess()
-        {
-            status       = CommandStatus::Supported;
-            failureCount = 0;
-        }
-
-        void recordFailure()
-        {
-            if (status == CommandStatus::Supported) return; // once supported, stays supported
-            if (++failureCount > kThreshold) status = CommandStatus::Unsupported;
-        }
+        bool isUnsupported() const;
+        void recordSuccess();
+        void recordFailure();
 
         template<typename T, typename E>
         void record(const tl::expected<T, E>& result)
@@ -162,28 +148,7 @@ class S21Manager {
         {}
 
         /// Returns cached value if fresh; otherwise calls FetchFn and caches on success.
-        tl::expected<CachedType, S21PresentationError> get()
-        {
-            auto now = mClock();
-            if (mValue && (now - mTimestamp) <= mMaxAge) {
-#ifdef __ZEPHYR__
-                LOG_DBG("%s cache: hit", mName);
-#endif
-                return *mValue;
-            }
-            auto result = mFetch();
-            if (result) {
-#ifdef __ZEPHYR__
-                LOG_DBG("%s cache: miss, fetch succeeded", mName);
-#endif
-                mValue = *result; mTimestamp = now;
-            } else {
-#ifdef __ZEPHYR__
-                LOG_DBG("%s cache: miss, fetch failed: %s", mName, result.error().what());
-#endif
-            }
-            return result;
-        }
+        tl::expected<CachedType, S21PresentationError> get();
 
         /// Directly write a value, timestamping with the internal clock.
         void update(CachedType val)

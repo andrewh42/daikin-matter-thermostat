@@ -5,7 +5,7 @@
  */
 #pragma once
 
-#include "s21/s21_presentation.h"
+#include "s21/s21_manager.h"
 
 #include <stdbool.h>
 #include <stdint.h>
@@ -14,6 +14,8 @@
 #include <app/ConcreteAttributePath.h>
 
 #include <lib/core/CHIPError.h>
+
+#include <zephyr/kernel.h>
 
 using namespace chip;
 using namespace chip::app;
@@ -26,7 +28,7 @@ class AirConditionerManager {
         return sAirConditionerManager;
     };
 
-    CHIP_ERROR Init(S21Presentation& s21Presentation);
+    CHIP_ERROR Init(S21Manager& s21Manager);
     void AttributeChangeHandler(const ConcreteAttributePath& attributePath, uint8_t* value, uint16_t size);
     DataModel::Nullable<int16_t> GetLocalTemp();
     DataModel::Nullable<int16_t> GetOutdoorTemp();
@@ -34,7 +36,18 @@ class AirConditionerManager {
     void LogThermostatStatus();
 
   private:
-    S21Presentation* mS21Presentation;
+    S21Manager* mS21Manager{nullptr};
+    struct k_work_q         mS21WorkQueue;
+    struct k_work_delayable mPollWork;
+    struct k_work_delayable mInitRetryWork;
+
+    static constexpr int kS21PollIntervalSec                  = 30;
+    static constexpr int kS21InitRetryInitialIntervalMilliSec = 500;
+    static constexpr int kS21InitRetryMaximumIntervalMilliSec = 60'000;
+    static void PollWorkHandler(k_work* work);
+    static void InitRetryWorkHandler(k_work* work);
+
+    int  mInitRetryIntervalMs{kS21InitRetryInitialIntervalMilliSec};
     bool mOnOff;
     DataModel::Nullable<int16_t> mLocalTempCelsius;
     DataModel::Nullable<int16_t> mOutdoorTempCelsius;

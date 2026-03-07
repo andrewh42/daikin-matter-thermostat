@@ -6,8 +6,62 @@
 #include <cerrno>
 
 #ifdef __ZEPHYR__
+#include <zephyr/logging/log.h>
+
 LOG_MODULE_REGISTER(s21_manager, LOG_LEVEL_DBG);
 #endif
+
+// ── CommandCapability ─────────────────────────────────────────────────────
+
+bool S21Manager::CommandCapability::isUnsupported() const
+{
+    return status == CommandStatus::Unsupported;
+}
+
+void S21Manager::CommandCapability::recordSuccess()
+{
+    status       = CommandStatus::Supported;
+    failureCount = 0;
+}
+
+void S21Manager::CommandCapability::recordFailure()
+{
+    if (status == CommandStatus::Supported) return; // once supported, stays supported
+    if (++failureCount > kThreshold) status = CommandStatus::Unsupported;
+}
+
+// ── ReadThroughCache ──────────────────────────────────────────────────────
+
+template<typename CachedType>
+tl::expected<CachedType, S21PresentationError> S21Manager::ReadThroughCache<CachedType>::get()
+{
+    auto now = mClock();
+    if (mValue && (now - mTimestamp) <= mMaxAge) {
+#ifdef __ZEPHYR__
+        LOG_DBG("%s cache: hit", mName);
+#endif
+        return *mValue;
+    }
+    auto result = mFetch();
+    if (result) {
+#ifdef __ZEPHYR__
+        LOG_DBG("%s cache: miss, fetch succeeded", mName);
+#endif
+        mValue = *result; mTimestamp = now;
+    } else {
+#ifdef __ZEPHYR__
+        LOG_DBG("%s cache: miss, fetch failed: %s", mName, result.error().what());
+#endif
+    }
+    return result;
+}
+
+template tl::expected<S21Presentation::GetOperationResult, S21PresentationError>
+    S21Manager::ReadThroughCache<S21Presentation::GetOperationResult>::get();
+template tl::expected<S21Presentation::GetCoarseTemperatureAndHumidityResult, S21PresentationError>
+    S21Manager::ReadThroughCache<S21Presentation::GetCoarseTemperatureAndHumidityResult>::get();
+
+// ── S21Manager ────────────────────────────────────────────────────────────
 
 S21Manager::S21Manager(S21PresentationSync& presentation,
                        std::chrono::seconds cacheMaxAge,

@@ -6,7 +6,6 @@
 
 #include "app_task.h"
 
-#include "temp_sensor_manager.h"
 #include "airconditioner_manager.h"
 #include "s21/s21_stack.h"
 
@@ -60,13 +59,7 @@ CHIP_ERROR AppTask::Init()
 
     /* Initialize Matter stack */
     ReturnErrorOnFailure(Nrf::Matter::PrepareServer(Nrf::Matter::InitData{.mPostServerInitClbk = [] {
-        CHIP_ERROR err = TempSensorManager::Instance().Init();
-        if (err != CHIP_NO_ERROR) {
-            LOG_ERR("TempSensorManager Init fail");
-            return err;
-        }
-
-        err = AirConditionerManager::Instance().Init(S21Stack::Instance().GetPresentation());
+        CHIP_ERROR err = AirConditionerManager::Instance().Init(S21Stack::Instance().GetManager());
         if (err != CHIP_NO_ERROR) {
             LOG_ERR("AirConditionerManager Init fail");
         }
