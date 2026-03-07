@@ -4,14 +4,18 @@
 
 #include "s21_manager.h"
 
+#ifdef __ZEPHYR__
+LOG_MODULE_REGISTER(s21_manager, LOG_LEVEL_DBG);
+#endif
+
 S21Manager::S21Manager(S21PresentationSync& presentation,
                        std::chrono::seconds cacheMaxAge,
                        TimeSource timeSource)
         : mPresentation(presentation)
-        , mOperationCache(cacheMaxAge, timeSource,
+        , mOperationCache("operation", cacheMaxAge, timeSource,
                           [this] { return mPresentation.getOperation(); })
         , mCoarseTemperatureAndHumidityCache(
-                  cacheMaxAge, timeSource, [this] {
+                  "coarse_temp_humidity", cacheMaxAge, timeSource, [this] {
                       if (mCoarseTemperatureAndHumidityCapability.isUnsupported())
                           return tl::expected<S21Presentation::GetCoarseTemperatureAndHumidityResult,
                                               S21PresentationError>{
@@ -27,14 +31,32 @@ int S21Manager::Init()
     if (mIsReady) return 0;
 
     auto version = mPresentation.getProtocolVersion();
-    if (version) mProtocolMajor = version->first;
+    if (version) {
+        mProtocolMajor = version->first;
+#ifdef __ZEPHYR__
+        LOG_DBG("protocol version: %u.%u", version->first, version->second);
+#endif
+    }
+    else {
+#ifdef __ZEPHYR__
+        LOG_DBG("getProtocolVersion failed: %s", version.error().what());
+#endif
+    }
 
     if (mProtocolMajor >= 2) {
         auto extVersion = mPresentation.getExtendedProtocolVersion();
-        if (extVersion) mProtocolMajor = extVersion->first; // NAK → ignored
+        if (extVersion) {
+            mProtocolMajor = extVersion->first; // NAK → ignored
+#ifdef __ZEPHYR__
+            LOG_DBG("extended protocol version: %u.%u", extVersion->first, extVersion->second);
+#endif
+        }
     }
 
     mIsReady = true;
+#ifdef __ZEPHYR__
+    LOG_DBG("init complete, protocol major: %u", mProtocolMajor);
+#endif
     return 0;
 }
 

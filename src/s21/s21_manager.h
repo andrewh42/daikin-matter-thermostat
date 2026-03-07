@@ -6,6 +6,10 @@
 
 #include "s21_presentation_sync.h"
 
+#ifdef __ZEPHYR__
+#include <zephyr/logging/log.h>
+#endif
+
 #include <chrono>
 #include <functional>
 #include <optional>
@@ -153,17 +157,31 @@ class S21Manager {
       public:
         using FetchFn = std::function<tl::expected<CachedType, S21PresentationError>()>;
 
-        ReadThroughCache(std::chrono::seconds maxAge, TimeSource clock, FetchFn fetch)
-            : mMaxAge(maxAge), mClock(std::move(clock)), mFetch(std::move(fetch))
+        ReadThroughCache(const char* name, std::chrono::seconds maxAge, TimeSource clock, FetchFn fetch)
+            : mName(name), mMaxAge(maxAge), mClock(std::move(clock)), mFetch(std::move(fetch))
         {}
 
         /// Returns cached value if fresh; otherwise calls FetchFn and caches on success.
         tl::expected<CachedType, S21PresentationError> get()
         {
             auto now = mClock();
-            if (mValue && (now - mTimestamp) <= mMaxAge) return *mValue;
+            if (mValue && (now - mTimestamp) <= mMaxAge) {
+#ifdef __ZEPHYR__
+                LOG_DBG("%s cache: hit", mName);
+#endif
+                return *mValue;
+            }
             auto result = mFetch();
-            if (result) { mValue = *result; mTimestamp = now; }
+            if (result) {
+#ifdef __ZEPHYR__
+                LOG_DBG("%s cache: miss, fetch succeeded", mName);
+#endif
+                mValue = *result; mTimestamp = now;
+            } else {
+#ifdef __ZEPHYR__
+                LOG_DBG("%s cache: miss, fetch failed: %s", mName, result.error().what());
+#endif
+            }
             return result;
         }
 
@@ -179,6 +197,7 @@ class S21Manager {
         const std::optional<CachedType>& value() const { return mValue; }
 
       private:
+        const char*             mName;
         std::chrono::seconds    mMaxAge;
         TimeSource              mClock;
         FetchFn                 mFetch;
