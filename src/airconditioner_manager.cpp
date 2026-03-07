@@ -97,18 +97,26 @@ void AirConditionerManager::PollWorkHandler(k_work* work)
     auto* dwork = k_work_delayable_from_work(work);
     auto& self  = *CONTAINER_OF(dwork, AirConditionerManager, mPollWork);
 
-    auto indoor  = self.mS21Manager->getRoomTemperature();
-    auto outdoor = self.mS21Manager->getOutdoorTemperature();
+    self.PollTemperatures();
+    self.PollOperation();
+
+    k_work_reschedule_for_queue(&self.mS21WorkQueue, &self.mPollWork, K_SECONDS(kS21PollIntervalSec));
+}
+
+void AirConditionerManager::PollTemperatures()
+{
+    auto indoor  = mS21Manager->getRoomTemperature();
+    auto outdoor = mS21Manager->getOutdoorTemperature();
 
     if (!indoor)  LOG_WRN("getRoomTemperature failed: %s",    indoor.error().message);
     if (!outdoor) LOG_WRN("getOutdoorTemperature failed: %s", outdoor.error().message);
 
-    bool indoorChanged  = indoor  && (self.mLocalTempCelsius.IsNull()   || self.mLocalTempCelsius.Value()   != *indoor);
-    bool outdoorChanged = outdoor && (self.mOutdoorTempCelsius.IsNull()  || self.mOutdoorTempCelsius.Value() != *outdoor);
+    bool indoorChanged  = indoor  && (mLocalTempCelsius.IsNull()   || mLocalTempCelsius.Value()   != *indoor);
+    bool outdoorChanged = outdoor && (mOutdoorTempCelsius.IsNull()  || mOutdoorTempCelsius.Value() != *outdoor);
 
     if (indoorChanged || outdoorChanged) {
-        if (indoorChanged)  self.mLocalTempCelsius.SetNonNull(*indoor);
-        if (outdoorChanged) self.mOutdoorTempCelsius.SetNonNull(*outdoor);
+        if (indoorChanged)  mLocalTempCelsius.SetNonNull(*indoor);
+        if (outdoorChanged) mOutdoorTempCelsius.SetNonNull(*outdoor);
 
         std::optional<int16_t> indoorVal  = indoorChanged  ? std::optional(*indoor)  : std::nullopt;
         std::optional<int16_t> outdoorVal = outdoorChanged ? std::optional(*outdoor) : std::nullopt;
@@ -121,8 +129,53 @@ void AirConditionerManager::PollWorkHandler(k_work* work)
     } else {
         LOG_DBG("S21 temperatures unchanged, not updating attributes");
     }
+}
 
-    k_work_reschedule_for_queue(&self.mS21WorkQueue, &self.mPollWork, K_SECONDS(kS21PollIntervalSec));
+void AirConditionerManager::PollOperation()
+{
+    auto op = mS21Manager->getOperation();
+    if (!op) {
+        LOG_WRN("getOperation failed: %s", op.error().message);
+        return;
+    }
+
+    auto [onOff, mode, setpoint, fanMode] = *op;
+    auto systemMode = OperatingModeToSystemMode(mode);
+
+    bool onOffChanged   = (onOff != mOnOff);
+    bool modeChanged    = (systemMode != mThermMode);
+    bool coolingChanged = (mode == OperatingMode::Cool) && (setpoint != mCoolingCelsiusSetPoint);
+    bool heatingChanged = (mode == OperatingMode::Heat) && (setpoint != mHeatingCelsiusSetPoint);
+
+    if (!onOffChanged && !modeChanged && !coolingChanged && !heatingChanged) {
+        LOG_DBG("S21 operation unchanged, not updating attributes");
+        return;
+    }
+
+    Nrf::PostTask([onOff, systemMode, onOffChanged, modeChanged,
+                   setpoint, coolingChanged, heatingChanged] {
+        PlatformMgr().LockChipStack();
+        if (onOffChanged)   OnOff::Attributes::OnOff::Set(kThermostatEndpoint, onOff);
+        if (modeChanged)    SystemMode::Set(kThermostatEndpoint, systemMode);
+        if (coolingChanged) OccupiedCoolingSetpoint::Set(kThermostatEndpoint, setpoint);
+        if (heatingChanged) OccupiedHeatingSetpoint::Set(kThermostatEndpoint, setpoint);
+        PlatformMgr().UnlockChipStack();
+    });
+}
+
+Clusters::Thermostat::SystemModeEnum AirConditionerManager::OperatingModeToSystemMode(OperatingMode mode)
+{
+    using SystemModeEnum = Clusters::Thermostat::SystemModeEnum;
+    switch (mode) {
+    case OperatingMode::Cool:         return SystemModeEnum::kCool;
+    case OperatingMode::Heat:         return SystemModeEnum::kHeat;
+    case OperatingMode::Dry:          return SystemModeEnum::kDry;
+    case OperatingMode::FanOnly:      return SystemModeEnum::kFanOnly;
+    case OperatingMode::Auto:
+    case OperatingMode::Auto_Cooling:
+    case OperatingMode::Auto_Heating: return SystemModeEnum::kAuto;
+    default:                          return SystemModeEnum::kAuto;
+    }
 }
 
 void AirConditionerManager::InitRetryWorkHandler(k_work* work)

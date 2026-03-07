@@ -67,6 +67,9 @@ class S21Manager {
 
     // ── Read operations ───────────────────────────────────────────────────
 
+    /// Returns the full operation result (on/off, mode, setpoint, fan mode) from cache.
+    Result<S21Presentation::GetOperationResult> getOperation();
+
     /// Returns on/off state from the cached getOperation result.
     Result<bool> getOnOff();
 

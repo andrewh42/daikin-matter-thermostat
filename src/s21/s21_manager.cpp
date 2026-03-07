@@ -122,6 +122,14 @@ int S21Manager::Init()
 
 // ── Getters from operation cache ──────────────────────────────────────────
 
+auto S21Manager::getOperation() -> Result<S21Presentation::GetOperationResult>
+{
+    if (!isReady()) return notReady();
+    auto op = mOperationCache.get();
+    if (!op) return presentationError(op.error());
+    return *op;
+}
+
 auto S21Manager::getOnOff() -> Result<bool>
 {
     if (!isReady()) return notReady();
