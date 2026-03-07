@@ -3,6 +3,7 @@
  */
 
 #include "s21_manager.h"
+#include <cerrno>
 
 #ifdef __ZEPHYR__
 LOG_MODULE_REGISTER(s21_manager, LOG_LEVEL_DBG);
@@ -31,24 +32,29 @@ int S21Manager::Init()
     if (mIsReady) return 0;
 
     auto version = mPresentation.getProtocolVersion();
-    if (version) {
-        mProtocolMajor = version->first;
+    if (!version) {
 #ifdef __ZEPHYR__
-        LOG_DBG("protocol version: %u.%u", version->first, version->second);
+        LOG_WRN("S21 protocol version detection failed: %s", version.error().what());
 #endif
+        return -ENODEV;
     }
-    else {
+
+    mProtocolMajor = version->first;
 #ifdef __ZEPHYR__
-        LOG_DBG("getProtocolVersion failed: %s", version.error().what());
+    LOG_DBG("protocol version: %u.%u", version->first, version->second);
 #endif
-    }
 
     if (mProtocolMajor >= 2) {
         auto extVersion = mPresentation.getExtendedProtocolVersion();
         if (extVersion) {
-            mProtocolMajor = extVersion->first; // NAK → ignored
+            mProtocolMajor = extVersion->first;
 #ifdef __ZEPHYR__
             LOG_DBG("extended protocol version: %u.%u", extVersion->first, extVersion->second);
+#endif
+        }
+        else {
+#ifdef __ZEPHYR__
+            LOG_DBG("getExtendedProtocolVersion failed: %s", extVersion.error().what());
 #endif
         }
     }

@@ -120,17 +120,39 @@ TEST_CASE("S21Manager v3 unit: extended version updates protocol major", "[s21mg
     REQUIRE(f.mock.getExtProtocolVersionCallCount == 1);
 }
 
-TEST_CASE("S21Manager getProtocolVersion failure: no ext version call, still reaches Ready",
+TEST_CASE("S21Manager getProtocolVersion failure: Init() returns < 0, not ready",
           "[s21mgr][init]")
 {
     Fixture f;
     f.mock.protocolVersionResult = tl::unexpected(presError("timeout"));
 
-    f.mgr.Init();
+    int err = f.mgr.Init();
 
-    REQUIRE(f.mgr.isReady());
+    REQUIRE(err < 0);
+    REQUIRE_FALSE(f.mgr.isReady());
     REQUIRE(f.mock.getProtocolVersionCallCount == 1);
     REQUIRE(f.mock.getExtProtocolVersionCallCount == 0);
+}
+
+TEST_CASE("S21Manager getProtocolVersion failure: Init() is retryable", "[s21mgr][init]")
+{
+    Fixture f;
+    f.mock.protocolVersionResult = tl::unexpected(presError("timeout"));
+
+    // First attempt fails
+    REQUIRE(f.mgr.Init() < 0);
+    REQUIRE_FALSE(f.mgr.isReady());
+
+    // Second attempt also fails (idempotent guard should NOT fire when not ready)
+    REQUIRE(f.mgr.Init() < 0);
+    REQUIRE_FALSE(f.mgr.isReady());
+    REQUIRE(f.mock.getProtocolVersionCallCount == 2);
+
+    // Third attempt succeeds once the AC comes up
+    f.mock.protocolVersionResult = {{1, 0}};
+    REQUIRE(f.mgr.Init() == 0);
+    REQUIRE(f.mgr.isReady());
+    REQUIRE(f.mock.getProtocolVersionCallCount == 3);
 }
 
 TEST_CASE("S21Manager v2 with ext version NAK: still reaches Ready", "[s21mgr][init]")
