@@ -14,7 +14,7 @@
 
 #include <cstring>
 
-LOG_MODULE_REGISTER(s21_uart, LOG_LEVEL_DBG);
+LOG_MODULE_REGISTER(s21_uart, LOG_LEVEL_INF);
 
 S21DataLinkUart::S21DataLinkUart(NRF_UARTE_Type* uarte)
         : m_uarte(uarte)
@@ -263,10 +263,10 @@ void S21DataLinkUart::isrHandler(const void* arg)
 
         if (timeout) {
             nrf_timer_event_clear(NRF_TIMER20, NRF_TIMER_EVENT_COMPARE0);
-            LOG_DBG("S21DataLinkUart: RX timeout (no response)");
+            LOG_INF("S21DataLinkUart: RX timeout (no response)");
         } else if (nrf_uarte_event_check(uarte, NRF_UARTE_EVENT_FRAME_TIMEOUT)) {
             nrf_uarte_event_clear(uarte, NRF_UARTE_EVENT_FRAME_TIMEOUT);
-            LOG_DBG("S21DataLinkUart: RX timeout (frame)");
+            LOG_INF("S21DataLinkUart: RX timeout (frame)");
             timeout = true;
         } else {
             LOG_DBG("S21DataLinkUart: RX ended with %s match", self->rxMatch());
@@ -305,7 +305,7 @@ void S21DataLinkUart::isrHandler(const void* arg)
     if (nrf_uarte_event_check(uarte, NRF_UARTE_EVENT_ERROR)) {
         nrf_uarte_event_clear(uarte, NRF_UARTE_EVENT_ERROR);
         uint32_t errSrc = nrf_uarte_errorsrc_get_and_clear(uarte);
-        LOG_ERR("UARTE RX error source: 0x%08x %s%s%s%s", errSrc,
+        LOG_WRN("UARTE RX error source: 0x%08x %s%s%s%s", errSrc,
             (errSrc & UARTE_ERRORSRC_OVERRUN_Msk) ? "overrun " : "",
             (errSrc & UARTE_ERRORSRC_PARITY_Msk) ? "parity " : "",
             (errSrc & UARTE_ERRORSRC_FRAMING_Msk) ? "framing " : "",
