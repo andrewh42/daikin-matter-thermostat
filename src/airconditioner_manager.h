@@ -46,14 +46,15 @@ class AirConditionerManager {
     static constexpr int kS21InitRetryMaximumIntervalMilliSec = 60'000;
     static void PollWorkHandler(k_work* work);
     static void InitRetryWorkHandler(k_work* work);
-    void PollTemperatures();
+    void PollSensors();
     void PollOperation();
     static Clusters::Thermostat::SystemModeEnum OperatingModeToSystemMode(OperatingMode mode);
 
     int  mInitRetryIntervalMs{kS21InitRetryInitialIntervalMilliSec};
     bool mOnOff;
-    DataModel::Nullable<int16_t> mLocalTempCelsius;
-    DataModel::Nullable<int16_t> mOutdoorTempCelsius;
+    DataModel::Nullable<int16_t>  mLocalTempCelsius;
+    DataModel::Nullable<int16_t>  mOutdoorTempCelsius;
+    DataModel::Nullable<uint16_t> mHumidity;
     int16_t mCoolingCelsiusSetPoint;
     int16_t mHeatingCelsiusSetPoint;
     Clusters::Thermostat::SystemModeEnum mThermMode;

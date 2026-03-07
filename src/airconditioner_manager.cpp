@@ -19,10 +19,12 @@ using namespace chip;
 using namespace ::chip::DeviceLayer;
 using namespace ::chip::app::Clusters;
 using namespace chip::app::Clusters::FanControl::Attributes;
+using namespace chip::app::Clusters::RelativeHumidityMeasurement::Attributes;
 using namespace chip::app::Clusters::Thermostat::Attributes;
 using namespace Protocols::InteractionModel;
 
-constexpr EndpointId kThermostatEndpoint = 1;
+constexpr EndpointId kThermostatEndpoint     = 1;
+constexpr EndpointId kHumiditySensorEndpoint = 2;
 
 K_THREAD_STACK_DEFINE(sS21WorkQueueStack, 2048);
 
@@ -97,37 +99,43 @@ void AirConditionerManager::PollWorkHandler(k_work* work)
     auto* dwork = k_work_delayable_from_work(work);
     auto& self  = *CONTAINER_OF(dwork, AirConditionerManager, mPollWork);
 
-    self.PollTemperatures();
+    self.PollSensors();
     self.PollOperation();
 
     k_work_reschedule_for_queue(&self.mS21WorkQueue, &self.mPollWork, K_SECONDS(kS21PollIntervalSec));
 }
 
-void AirConditionerManager::PollTemperatures()
+void AirConditionerManager::PollSensors()
 {
-    auto indoor  = mS21Manager->getRoomTemperature();
-    auto outdoor = mS21Manager->getOutdoorTemperature();
+    auto indoor   = mS21Manager->getRoomTemperature();
+    auto outdoor  = mS21Manager->getOutdoorTemperature();
+    auto humidity = mS21Manager->getHumidity();
 
-    if (!indoor)  LOG_WRN("getRoomTemperature failed: %s",    indoor.error().message);
-    if (!outdoor) LOG_WRN("getOutdoorTemperature failed: %s", outdoor.error().message);
+    if (!indoor)   LOG_WRN("getRoomTemperature failed: %s",    indoor.error().message);
+    if (!outdoor)  LOG_INF("getOutdoorTemperature failed: %s", outdoor.error().message);
+    if (!humidity) LOG_INF("getHumidity failed: %s",           humidity.error().message);
 
-    bool indoorChanged  = indoor  && (mLocalTempCelsius.IsNull()   || mLocalTempCelsius.Value()   != *indoor);
-    bool outdoorChanged = outdoor && (mOutdoorTempCelsius.IsNull()  || mOutdoorTempCelsius.Value() != *outdoor);
+    bool indoorChanged   = indoor   && (mLocalTempCelsius.IsNull()  || mLocalTempCelsius.Value()  != *indoor);
+    bool outdoorChanged  = outdoor  && (mOutdoorTempCelsius.IsNull() || mOutdoorTempCelsius.Value() != *outdoor);
+    bool humidityChanged = humidity && (mHumidity.IsNull()           || mHumidity.Value()           != *humidity * 100);
 
-    if (indoorChanged || outdoorChanged) {
-        if (indoorChanged)  mLocalTempCelsius.SetNonNull(*indoor);
-        if (outdoorChanged) mOutdoorTempCelsius.SetNonNull(*outdoor);
+    if (indoorChanged || outdoorChanged || humidityChanged) {
+        if (indoorChanged)   mLocalTempCelsius.SetNonNull(*indoor);
+        if (outdoorChanged)  mOutdoorTempCelsius.SetNonNull(*outdoor);
+        if (humidityChanged) mHumidity.SetNonNull(*humidity * 100);
 
-        std::optional<int16_t> indoorVal  = indoorChanged  ? std::optional(*indoor)  : std::nullopt;
-        std::optional<int16_t> outdoorVal = outdoorChanged ? std::optional(*outdoor) : std::nullopt;
-        Nrf::PostTask([indoorVal, outdoorVal] {
+        std::optional<int16_t>  indoorVal    = indoorChanged   ? std::optional(*indoor)           : std::nullopt;
+        std::optional<int16_t>  outdoorVal   = outdoorChanged  ? std::optional(*outdoor)          : std::nullopt;
+        std::optional<uint16_t> humidityVal  = humidityChanged ? std::optional<uint16_t>(*humidity * 100) : std::nullopt;
+        Nrf::PostTask([indoorVal, outdoorVal, humidityVal] {
             PlatformMgr().LockChipStack();
-            if (indoorVal)  LocalTemperature::Set(kThermostatEndpoint, *indoorVal);
-            if (outdoorVal) OutdoorTemperature::Set(kThermostatEndpoint, *outdoorVal);
+            if (indoorVal)   LocalTemperature::Set(kThermostatEndpoint, *indoorVal);
+            if (outdoorVal)  OutdoorTemperature::Set(kThermostatEndpoint, *outdoorVal);
+            if (humidityVal) MeasuredValue::Set(kHumiditySensorEndpoint, *humidityVal);
             PlatformMgr().UnlockChipStack();
         });
     } else {
-        LOG_DBG("S21 temperatures unchanged, not updating attributes");
+        LOG_DBG("S21 sensors unchanged, not updating attributes");
     }
 }
 
@@ -278,6 +286,11 @@ void AirConditionerManager::AttributeChangeHandler(const ConcreteAttributePath& 
         break;
     case OnOff::Id:
         OnOffAttributeChangeHandler(attributePath.mAttributeId, value, size);
+        break;
+    case RelativeHumidityMeasurement::Id:
+        // RelativeHumidityMeasurement cluster is read-only so we only log changes for debugging purposes
+        LOG_INF("RelativeHumidityMeasurement cluster attribute changed: Attribute ID %u, Value: %u, Size: %u",
+                attributePath.mAttributeId, *value, size);
         break;
     default:
         LOG_INF("Unhandled cluster ID: %u", attributePath.mClusterId);
