@@ -12,6 +12,7 @@
 #include <zephyr/logging/log.h>
 
 #include <optional>
+#include <atomic>
 
 LOG_MODULE_DECLARE(app, CONFIG_CHIP_APP_LOG_LEVEL);
 
@@ -81,6 +82,7 @@ exit:
                    K_PRIO_PREEMPT(5), NULL);
     k_work_init_delayable(&mPollWork, PollWorkHandler);
     k_work_init_delayable(&mInitRetryWork, InitRetryWorkHandler);
+    k_work_init(&mCommandWork, CommandWorkHandler);
 
     if (mS21Manager->Init() == 0) {
         k_work_reschedule_for_queue(&mS21WorkQueue, &mPollWork, K_SECONDS(kS21PollIntervalSec));
@@ -148,15 +150,39 @@ void AirConditionerManager::PollOperation()
     }
 
     auto [onOff, mode, setpoint, fanMode] = *op;
+    mFanMode = fanMode;
+
     auto systemMode = OperatingModeToSystemMode(mode);
 
-    bool onOffChanged   = (onOff != mOnOff);
-    bool modeChanged    = (systemMode != mThermMode);
-    bool coolingChanged = (mode == OperatingMode::Cool || mode == OperatingMode::Auto_Cooling || mode == OperatingMode::Auto) && (setpoint != mCoolingCelsiusSetPoint);
-    bool heatingChanged = (mode == OperatingMode::Heat || mode == OperatingMode::Auto_Heating || mode == OperatingMode::Auto) && (setpoint != mHeatingCelsiusSetPoint);
+    // Suppress Matter writes while an S21 command is pending: local state already reflects
+    // the user's intent, and the command will update S21 (and thus the cache) shortly.
+    bool pendingOperation = mPendingCommandFlags.load() & kCommandOperation;
+    if (pendingOperation) {
+        LOG_DBG("S21 operation pending, skipping attribute update");
+        return;
+    }
+
+    // Update local state if anything is out of sync with the received S21 state, to avoid AirConditionerManager::AttributeChangeHandler()
+    // unnecessarily scheduling AirConditionerManager::CommandWorkHandler to update S21 with the already-set values.
+    bool onOffChanged = (onOff != mOnOff);
+    mOnOff = onOff;
+
+    bool modeChanged = (systemMode != mThermMode);
+    mThermMode = systemMode;
+
+    bool coolingChanged = (mode == OperatingMode::Cool || mode == OperatingMode::Auto_Cooling ||
+                           mode == OperatingMode::Auto) &&
+                          (setpoint != mCoolingCelsiusSetPoint);
+    if (coolingChanged) mCoolingCelsiusSetPoint = setpoint;
+
+    bool heatingChanged = (mode == OperatingMode::Heat || mode == OperatingMode::Auto_Heating ||
+                           mode == OperatingMode::Auto) &&
+                          (setpoint != mHeatingCelsiusSetPoint);
+    if (heatingChanged) mHeatingCelsiusSetPoint = setpoint;
 
     if (!onOffChanged && !modeChanged && !coolingChanged && !heatingChanged) {
-        LOG_DBG("S21 operation unchanged, not updating attributes");
+        LOG_DBG("S21 operation unchanged, not updating attributes (S21 setpoint %d, cooling setpoint %d, heating setpoint %d)",
+            setpoint, mCoolingCelsiusSetPoint, mHeatingCelsiusSetPoint);
         return;
     }
 
@@ -278,8 +304,7 @@ void AirConditionerManager::AttributeChangeHandler(const ConcreteAttributePath& 
 {
     switch (attributePath.mClusterId) {
     case FanControl::Id:
-        LOG_INF("FanControl cluster attribute changed: Attribute ID %u, Value: %u, Size: %u",
-                attributePath.mAttributeId, *value, size);
+        FanControlAttributeChangeHandler(attributePath.mAttributeId, value, size);
         break;
     case Thermostat::Id:
         TemperatureAttributeChangeHandler(attributePath.mAttributeId, value, size);
@@ -299,9 +324,16 @@ void AirConditionerManager::AttributeChangeHandler(const ConcreteAttributePath& 
 
 void AirConditionerManager::OnOffAttributeChangeHandler(AttributeId attributeId, uint8_t* value, uint16_t size)
 {
-    mOnOff = *value;
+    bool newOnOff = *value;
+    if (newOnOff == mOnOff) {
+        LOG_DBG("OnOff: %s (unchanged)", mOnOff ? "ON" : "OFF");
+        return;
+    }
+    mOnOff = newOnOff;
     LOG_INF("Cluster OnOff: attribute OnOff set to %s", mOnOff ? "ON" : "OFF");
     UpdatePowerIndicator();
+    mPendingCommandFlags.fetch_or(kCommandOperation);
+    k_work_submit_to_queue(&mS21WorkQueue, &mCommandWork);
 }
 
 void AirConditionerManager::TemperatureAttributeChangeHandler(AttributeId attributeId, uint8_t* value, uint16_t size)
@@ -312,18 +344,50 @@ void AirConditionerManager::TemperatureAttributeChangeHandler(AttributeId attrib
         break; // updated by PollWorkHandler on the S21 work queue thread
 
     case OccupiedCoolingSetpoint::Id: {
-        mCoolingCelsiusSetPoint = *reinterpret_cast<int16_t*>(value);
-        LOG_INF("Cooling TEMP: %d", mCoolingCelsiusSetPoint);
+        auto coolingSetpoint = *reinterpret_cast<int16_t*>(value);
+        if (mCoolingCelsiusSetPoint != coolingSetpoint) {
+            LOG_INF("Cooling TEMP %d -> %d", mCoolingCelsiusSetPoint, coolingSetpoint);
+            mCoolingCelsiusSetPoint = coolingSetpoint;
+            if (mThermMode == app::Clusters::Thermostat::SystemModeEnum::kCool ||
+                mThermMode == app::Clusters::Thermostat::SystemModeEnum::kAuto) {
+                mPendingCommandFlags.fetch_or(kCommandOperation);
+                k_work_submit_to_queue(&mS21WorkQueue, &mCommandWork);
+            }
+        }
+        else {
+            LOG_DBG("Cooling TEMP: %d (unchanged)", coolingSetpoint);
+        }
     } break;
 
     case OccupiedHeatingSetpoint::Id: {
-        mHeatingCelsiusSetPoint = *reinterpret_cast<int16_t*>(value);
-        LOG_INF("Heating TEMP %d", mHeatingCelsiusSetPoint);
+        auto heatingSetpoint = *reinterpret_cast<int16_t*>(value);
+        if (mHeatingCelsiusSetPoint != heatingSetpoint) {
+            LOG_INF("Heating TEMP %d -> %d", mHeatingCelsiusSetPoint, heatingSetpoint);
+            mHeatingCelsiusSetPoint = heatingSetpoint;
+            if (mThermMode == app::Clusters::Thermostat::SystemModeEnum::kHeat ||
+                mThermMode == app::Clusters::Thermostat::SystemModeEnum::kAuto) {
+                mPendingCommandFlags.fetch_or(kCommandOperation);
+                k_work_submit_to_queue(&mS21WorkQueue, &mCommandWork);
+            }
+        }
+        else {
+            LOG_DBG("Heating TEMP: %d (unchanged)", heatingSetpoint);
+        }
     } break;
 
     case SystemMode::Id: {
-        mThermMode = static_cast<app::Clusters::Thermostat::SystemModeEnum>(*value);
-        LOG_INF("System Mode changed to %s", GetThermModeStr());
+        auto thermMode = static_cast<app::Clusters::Thermostat::SystemModeEnum>(*value);
+        if (mThermMode != thermMode) {
+            mThermMode = thermMode;
+            LOG_INF("System Mode changed to %s", GetThermModeStr());
+            if (mThermMode != app::Clusters::Thermostat::SystemModeEnum::kOff) {
+                mPendingCommandFlags.fetch_or(kCommandOperation);
+                k_work_submit_to_queue(&mS21WorkQueue, &mCommandWork);
+            }
+        }
+        else {
+            LOG_DBG("System Mode: %s (unchanged)", GetThermModeStr());
+        }
     } break;
 
     default: {
@@ -333,6 +397,110 @@ void AirConditionerManager::TemperatureAttributeChangeHandler(AttributeId attrib
     }
 
     LogThermostatStatus();
+}
+
+void AirConditionerManager::FanControlAttributeChangeHandler(AttributeId attributeId, uint8_t* value,
+                                                              uint16_t size)
+{
+    using namespace chip::app::Clusters::FanControl;
+
+    switch (attributeId) {
+    case Attributes::SpeedSetting::Id: {
+        auto mapped = SpeedSettingToS21FanMode(*value);
+        if (mapped) {
+            auto fanMode = *mapped;
+            if (fanMode != mFanMode) {
+                LOG_DBG("FanMode %u -> %u", static_cast<uint8_t>(mFanMode), static_cast<uint8_t>(fanMode));
+                mFanMode = fanMode;
+                mPendingCommandFlags.fetch_or(kCommandOperation);
+                k_work_submit_to_queue(&mS21WorkQueue, &mCommandWork);
+            }
+            else {
+                LOG_DBG("FanMode: %u (unchanged)", static_cast<uint8_t>(fanMode));
+            }
+        }
+        break;
+    }
+    case Attributes::FanMode::Id: {
+        auto fanModeEnum = static_cast<FanModeEnum>(*value);
+        if (fanModeEnum == FanModeEnum::kAuto || fanModeEnum == FanModeEnum::kSmart) {
+            if (mFanMode != ::FanMode::Auto) {
+                LOG_DBG("FanMode %u -> Auto", static_cast<uint8_t>(mFanMode));
+                mFanMode = ::FanMode::Auto;
+                mPendingCommandFlags.fetch_or(kCommandOperation);
+                k_work_submit_to_queue(&mS21WorkQueue, &mCommandWork);
+            }
+            else {
+                LOG_DBG("FanMode: Auto (unchanged)");
+            }
+        }
+        else {
+            // Non-Auto FanMode changes are always accompanied by a SpeedSetting change,
+            // which is the authoritative handler for discrete fan speeds.
+            LOG_DBG("FanMode %u (non-Auto): handled via SpeedSetting", static_cast<uint8_t>(fanModeEnum));
+        }
+        break;
+    }
+    default:
+        LOG_DBG("FanControl cluster attribute %u changed: value %u", attributeId, *value);
+        break;
+    }
+}
+
+void AirConditionerManager::CommandWorkHandler(k_work* work)
+{
+    auto& self = *CONTAINER_OF(work, AirConditionerManager, mCommandWork);
+    self.ExecutePendingCommands();
+}
+
+void AirConditionerManager::ExecutePendingCommands()
+{
+    uint32_t flags = mPendingCommandFlags.exchange(0);
+
+    if (flags & kCommandOperation) {
+        auto mode        = SystemModeToOperatingMode(mThermMode);
+        int16_t setpoint = (mode == OperatingMode::Heat || mode == OperatingMode::Auto_Heating)
+                           ? mHeatingCelsiusSetPoint : mCoolingCelsiusSetPoint;
+        LOG_INF("Sending setOperation(onOff=%s, mode=%u, setpoint=%d, fan=%u) to S21",
+                mOnOff ? "true" : "false", static_cast<uint8_t>(mode), setpoint,
+                static_cast<uint8_t>(mFanMode));
+        auto result = mS21Manager->setOperation(mOnOff, mode, setpoint, mFanMode);
+        if (!result) LOG_WRN("setOperation failed: %s", result.error().message);
+    }
+}
+
+OperatingMode AirConditionerManager::SystemModeToOperatingMode(
+    Clusters::Thermostat::SystemModeEnum mode)
+{
+    using SystemModeEnum = Clusters::Thermostat::SystemModeEnum;
+    switch (mode) {
+    case SystemModeEnum::kCool:          return OperatingMode::Cool;
+    case SystemModeEnum::kHeat:          return OperatingMode::Heat;
+    case SystemModeEnum::kDry:           return OperatingMode::Dry;
+    case SystemModeEnum::kFanOnly:       return OperatingMode::FanOnly;
+    case SystemModeEnum::kEmergencyHeat: return OperatingMode::Heat;
+    case SystemModeEnum::kPrecooling:    return OperatingMode::Cool;
+    case SystemModeEnum::kAuto:
+    default:                             return OperatingMode::Auto;
+    }
+}
+
+std::optional<::FanMode> AirConditionerManager::SpeedSettingToS21FanMode(uint8_t rawValue)
+{
+    // SpeedSetting is a nullable uint8_t; the null sentinel is 0xFF
+    if (rawValue == 0xFF) return ::FanMode::Auto;  // null → Auto
+    if (rawValue == 0)    return std::nullopt;      // 0 (power-off) → no-op
+    switch (rawValue) {
+    case 1: return ::FanMode::Quiet;
+    case 2: return ::FanMode::Low;
+    case 3: return ::FanMode::MidLow;
+    case 4: return ::FanMode::Medium;
+    case 5: return ::FanMode::MidHigh;
+    case 6: return ::FanMode::High;
+    default:
+        LOG_WRN("SpeedSetting value %u out of range [1,6], ignoring", rawValue);
+        return std::nullopt;
+    }
 }
 
 void AirConditionerManager::UpdatePowerIndicator()

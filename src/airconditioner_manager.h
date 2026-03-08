@@ -15,6 +15,8 @@
 
 #include <lib/core/CHIPError.h>
 
+#include <atomic>
+#include <optional>
 #include <zephyr/kernel.h>
 
 using namespace chip;
@@ -40,27 +42,46 @@ class AirConditionerManager {
     struct k_work_q         mS21WorkQueue;
     struct k_work_delayable mPollWork;
     struct k_work_delayable mInitRetryWork;
+    struct k_work           mCommandWork;
 
     static constexpr int kS21PollIntervalSec                  = 30;
     static constexpr int kS21InitRetryInitialIntervalMilliSec = 500;
     static constexpr int kS21InitRetryMaximumIntervalMilliSec = 60'000;
     static void PollWorkHandler(k_work* work);
     static void InitRetryWorkHandler(k_work* work);
+    static void CommandWorkHandler(k_work* work);
     void PollSensors();
     void PollOperation();
+    void ExecutePendingCommands();
     static Clusters::Thermostat::SystemModeEnum OperatingModeToSystemMode(OperatingMode mode);
+    static OperatingMode SystemModeToOperatingMode(Clusters::Thermostat::SystemModeEnum mode);
+    static std::optional<FanMode> SpeedSettingToS21FanMode(uint8_t rawValue);
+
+    // mPendingCommandFlags is written from the Matter thread (fetch_or) and from the S21 work
+    // queue thread (exchange). All other mutable state is read/written only from the S21 work
+    // queue thread (PollOperation, ExecutePendingCommands) and from the Matter callback thread
+    // (AttributeChangeHandler). On ARM Cortex-M, aligned reads/writes of ≤4 bytes are
+    // hardware-atomic; the compiler cannot cache struct member reads across opaque calls like
+    // k_work_submit_to_queue, so these accesses are safe in practice without additional atomics.
+    std::atomic<uint32_t> mPendingCommandFlags{0};
+
+    enum CommandFlags : uint32_t {
+        kCommandOperation = BIT(0), // OnOff, mode, setpoint, fan — sent as a single setOperation()
+    };
 
     int  mInitRetryIntervalMs{kS21InitRetryInitialIntervalMilliSec};
-    bool mOnOff;
+    bool mOnOff{false};
     DataModel::Nullable<int16_t>  mLocalTempCelsius;
     DataModel::Nullable<int16_t>  mOutdoorTempCelsius;
     DataModel::Nullable<uint16_t> mHumidity;
-    int16_t mCoolingCelsiusSetPoint;
-    int16_t mHeatingCelsiusSetPoint;
-    Clusters::Thermostat::SystemModeEnum mThermMode;
+    int16_t mCoolingCelsiusSetPoint{0};
+    int16_t mHeatingCelsiusSetPoint{0};
+    Clusters::Thermostat::SystemModeEnum mThermMode{Clusters::Thermostat::SystemModeEnum::kAuto};
+    FanMode mFanMode{FanMode::Auto};
 
     void OnOffAttributeChangeHandler(AttributeId attributeId, uint8_t* value, uint16_t size);
     void TemperatureAttributeChangeHandler(AttributeId attributeId, uint8_t* value, uint16_t size);
+    void FanControlAttributeChangeHandler(AttributeId attributeId, uint8_t* value, uint16_t size);
     CHIP_ERROR InitLed();
     const char* GetThermModeStr();
     void UpdatePowerIndicator();
