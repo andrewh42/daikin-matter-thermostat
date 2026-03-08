@@ -150,6 +150,7 @@ void AirConditionerManager::PollOperation()
     }
 
     auto [onOff, mode, setpoint, fanMode] = *op;
+    bool fanModeChanged = (fanMode != mFanMode);
     mFanMode = fanMode;
 
     auto systemMode = OperatingModeToSystemMode(mode);
@@ -180,19 +181,32 @@ void AirConditionerManager::PollOperation()
                           (setpoint != mHeatingCelsiusSetPoint);
     if (heatingChanged) mHeatingCelsiusSetPoint = setpoint;
 
-    if (!onOffChanged && !modeChanged && !coolingChanged && !heatingChanged) {
+    if (!onOffChanged && !modeChanged && !coolingChanged && !heatingChanged && !fanModeChanged) {
         LOG_DBG("S21 operation unchanged, not updating attributes (S21 setpoint %d, cooling setpoint %d, heating setpoint %d)",
             setpoint, mCoolingCelsiusSetPoint, mHeatingCelsiusSetPoint);
         return;
     }
 
     Nrf::PostTask([onOff, systemMode, onOffChanged, modeChanged,
-                   setpoint, coolingChanged, heatingChanged] {
+                   setpoint, coolingChanged, heatingChanged,
+                   fanMode, fanModeChanged] {
+        using namespace chip::app::Clusters::FanControl;
         PlatformMgr().LockChipStack();
         if (onOffChanged)   OnOff::Attributes::OnOff::Set(kThermostatEndpoint, onOff);
         if (modeChanged)    SystemMode::Set(kThermostatEndpoint, systemMode);
         if (coolingChanged) OccupiedCoolingSetpoint::Set(kThermostatEndpoint, setpoint);
         if (heatingChanged) OccupiedHeatingSetpoint::Set(kThermostatEndpoint, setpoint);
+        if (fanModeChanged) {
+            auto speedSetting = S21FanModeToSpeedSetting(fanMode);
+            if (speedSetting.has_value()) {
+                Attributes::SpeedSetting::Set(kThermostatEndpoint, DataModel::MakeNullable(*speedSetting));
+            } else {
+                // Auto: write FanMode=kAuto and let the cluster server set SpeedSetting to null.
+                // Writing null directly to SpeedSetting is rejected (InvalidInState) by the
+                // fan-control-server unless the write originates from cluster logic.
+                Attributes::FanMode::Set(kThermostatEndpoint, FanModeEnum::kAuto);
+            }
+        }
         PlatformMgr().UnlockChipStack();
     });
 }
@@ -499,6 +513,22 @@ std::optional<::FanMode> AirConditionerManager::SpeedSettingToS21FanMode(uint8_t
     case 6: return ::FanMode::High;
     default:
         LOG_WRN("SpeedSetting value %u out of range [1,6], ignoring", rawValue);
+        return std::nullopt;
+    }
+}
+
+std::optional<uint8_t> AirConditionerManager::S21FanModeToSpeedSetting(::FanMode fanMode)
+{
+    switch (fanMode) {
+    case ::FanMode::Auto:    return std::nullopt;
+    case ::FanMode::Quiet:   return 1;
+    case ::FanMode::Low:     return 2;
+    case ::FanMode::MidLow:  return 3;
+    case ::FanMode::Medium:  return 4;
+    case ::FanMode::MidHigh: return 5;
+    case ::FanMode::High:    return 6;
+    default:
+        LOG_WRN("S21 FanMode %u unrecognised, defaulting to Auto", static_cast<uint8_t>(fanMode));
         return std::nullopt;
     }
 }

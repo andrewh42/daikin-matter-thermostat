@@ -56,6 +56,7 @@ class AirConditionerManager {
     static Clusters::Thermostat::SystemModeEnum OperatingModeToSystemMode(OperatingMode mode);
     static OperatingMode SystemModeToOperatingMode(Clusters::Thermostat::SystemModeEnum mode);
     static std::optional<FanMode> SpeedSettingToS21FanMode(uint8_t rawValue);
+    static std::optional<uint8_t> S21FanModeToSpeedSetting(FanMode fanMode);
 
     // mPendingCommandFlags is written from the Matter thread (fetch_or) and from the S21 work
     // queue thread (exchange). All other mutable state is read/written only from the S21 work
