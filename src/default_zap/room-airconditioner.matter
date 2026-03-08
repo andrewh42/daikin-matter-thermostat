@@ -2982,6 +2982,7 @@ endpoint 1 {
     ram      attribute minSetpointDeadBand default = 0;
     ram      attribute controlSequenceOfOperation default = 4;
     ram      attribute systemMode default = 0;
+    ram      attribute thermostatRunningMode default = 0;
     ram      attribute ACType default = 4;
     ram      attribute ACCoilTemperature;
     callback attribute generatedCommandList;

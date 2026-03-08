@@ -20,9 +20,10 @@
  *   Channel B: MATCH[ETX/ACK/NAK] + TIMER20 COMPARE[0] → STOPRX  (frame termination or timeout)
  *   Channel C: ENDRX → TIMER20 STOP  (cancel watchdog on normal RX completion)
  *
- * The only CPU wakeup per transaction is the ENDRX ISR, which posts the
- * result to a k_msgq and submits a k_work.  The callback runs in the
- * system work-queue thread.
+ * The ISR uses a four-state state machine (Idle → WaitingRx → TimedOut/SendingAck → Idle)
+ * to ensure exactly one k_msgq_put and one k_work_submit per transaction, preventing
+ * deadlocks from simultaneous ENDRX+ERROR events or cross-ISR FRAME_TIMEOUT races.
+ * See README-S21-UART-design.md for full design documentation.
  */
 class S21DataLinkUart: public S21DataLink {
   public:
@@ -67,6 +68,15 @@ class S21DataLinkUart: public S21DataLink {
         RxStatus status;
     };
 
+    // ── ISR hardware state machine ──
+    // See README-S21-UART-design.md for state diagram and transition table.
+    enum class IsrState : uint8_t {
+        Idle,           // no active transaction; ignore all events
+        WaitingRx,      // TX complete (DPPI chained STARTRX), awaiting response
+        TimedOut,       // timeout detected, waiting for ENDRX to deliver final DMA result
+        SendingAck,     // valid transact response received, ACK byte in flight
+    };
+
     // ── Operation state ──
     enum class OpType : uint8_t {
         None,
@@ -91,6 +101,7 @@ class S21DataLinkUart: public S21DataLink {
 
     CompletionWork m_completionWork;
 
+    std::atomic<IsrState> m_isrState{IsrState::Idle};
     std::atomic<OpType> m_opType{OpType::None};
     SendCallback m_sendCb;
     TransactCallback m_transactCb;

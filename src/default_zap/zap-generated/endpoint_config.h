@@ -66,7 +66,7 @@
     }
 
 // This is an array of EmberAfAttributeMetadata structures.
-#define GENERATED_ATTRIBUTE_COUNT 234
+#define GENERATED_ATTRIBUTE_COUNT 235
 #define GENERATED_ATTRIBUTES                                                                                           \
     {                                                                                                                  \
                                                                                                                        \
@@ -561,6 +561,8 @@
             {ZAP_MIN_MAX_DEFAULTS_INDEX(9), 0x0000001C, 1, ZAP_TYPE(ENUM8),                                            \
              ZAP_ATTRIBUTE_MASK(MIN_MAX) | ZAP_ATTRIBUTE_MASK(WRITABLE) |                                              \
                      ZAP_ATTRIBUTE_MASK(READABLE)}, /* SystemMode */                                                   \
+            {ZAP_SIMPLE_DEFAULT(0), 0x0000001E, 1, ZAP_TYPE(ENUM8),                                                    \
+             ZAP_ATTRIBUTE_MASK(READABLE)}, /* ThermostatRunningMode */                                                \
             {ZAP_MIN_MAX_DEFAULTS_INDEX(10), 0x00000040, 1, ZAP_TYPE(ENUM8),                                           \
              ZAP_ATTRIBUTE_MASK(MIN_MAX) | ZAP_ATTRIBUTE_MASK(WRITABLE) | ZAP_ATTRIBUTE_MASK(READABLE)}, /* ACType */  \
             {ZAP_SIMPLE_DEFAULT(0x8000), 0x00000046, 2, ZAP_TYPE(TEMPERATURE),                                         \
@@ -1076,8 +1078,8 @@
       /* Endpoint: 1, Cluster: Thermostat (server) */ \
       .clusterId = 0x00000201, \
       .attributes = ZAP_ATTRIBUTE_INDEX(187), \
-      .attributeCount = 20, \
-      .clusterSize = 35, \
+      .attributeCount = 21, \
+      .clusterSize = 36, \
       .mask = ZAP_CLUSTER_MASK(SERVER) | ZAP_CLUSTER_MASK(INIT_FUNCTION) | ZAP_CLUSTER_MASK(ATTRIBUTE_CHANGED_FUNCTION) | ZAP_CLUSTER_MASK(SHUTDOWN_FUNCTION) | ZAP_CLUSTER_MASK(PRE_ATTRIBUTE_CHANGED_FUNCTION), \
       .functions = chipFuncArrayThermostatServer, \
       .acceptedCommandList = ZAP_GENERATED_COMMANDS_INDEX( 79 ), \
@@ -1088,7 +1090,7 @@
   { \
       /* Endpoint: 1, Cluster: Fan Control (server) */ \
       .clusterId = 0x00000202, \
-      .attributes = ZAP_ATTRIBUTE_INDEX(207), \
+      .attributes = ZAP_ATTRIBUTE_INDEX(208), \
       .attributeCount = 11, \
       .clusterSize = 15, \
       .mask = ZAP_CLUSTER_MASK(SERVER) | ZAP_CLUSTER_MASK(ATTRIBUTE_CHANGED_FUNCTION) | ZAP_CLUSTER_MASK(PRE_ATTRIBUTE_CHANGED_FUNCTION), \
@@ -1101,7 +1103,7 @@
   { \
       /* Endpoint: 1, Cluster: Temperature Measurement (client) */ \
       .clusterId = 0x00000402, \
-      .attributes = ZAP_ATTRIBUTE_INDEX(218), \
+      .attributes = ZAP_ATTRIBUTE_INDEX(219), \
       .attributeCount = 0, \
       .clusterSize = 0, \
       .mask = ZAP_CLUSTER_MASK(CLIENT), \
@@ -1114,7 +1116,7 @@
   { \
       /* Endpoint: 2, Cluster: Identify (server) */ \
       .clusterId = 0x00000003, \
-      .attributes = ZAP_ATTRIBUTE_INDEX(218), \
+      .attributes = ZAP_ATTRIBUTE_INDEX(219), \
       .attributeCount = 4, \
       .clusterSize = 0, \
       .mask = ZAP_CLUSTER_MASK(SERVER), \
@@ -1127,7 +1129,7 @@
   { \
       /* Endpoint: 2, Cluster: Descriptor (server) */ \
       .clusterId = 0x0000001D, \
-      .attributes = ZAP_ATTRIBUTE_INDEX(222), \
+      .attributes = ZAP_ATTRIBUTE_INDEX(223), \
       .attributeCount = 6, \
       .clusterSize = 0, \
       .mask = ZAP_CLUSTER_MASK(SERVER), \
@@ -1140,7 +1142,7 @@
   { \
       /* Endpoint: 2, Cluster: Relative Humidity Measurement (server) */ \
       .clusterId = 0x00000405, \
-      .attributes = ZAP_ATTRIBUTE_INDEX(228), \
+      .attributes = ZAP_ATTRIBUTE_INDEX(229), \
       .attributeCount = 6, \
       .clusterSize = 14, \
       .mask = ZAP_CLUSTER_MASK(SERVER), \
@@ -1160,7 +1162,7 @@
 #define GENERATED_ENDPOINT_TYPES                                                                                       \
     {                                                                                                                  \
             {ZAP_CLUSTER_INDEX(0), 15, 23},                                                                            \
-            {ZAP_CLUSTER_INDEX(15), 9, 64},                                                                            \
+            {ZAP_CLUSTER_INDEX(15), 9, 65},                                                                            \
             {ZAP_CLUSTER_INDEX(24), 3, 14},                                                                            \
     }
 
@@ -1174,7 +1176,7 @@ static_assert(ATTRIBUTE_LARGEST <= CHIP_CONFIG_MAX_ATTRIBUTE_STORE_ELEMENT_SIZE,
 #define ATTRIBUTE_SINGLETONS_SIZE (0)
 
 // Total size of attribute storage
-#define ATTRIBUTE_MAX_SIZE (101)
+#define ATTRIBUTE_MAX_SIZE (102)
 
 // Number of fixed endpoints
 #define FIXED_ENDPOINT_COUNT (3)

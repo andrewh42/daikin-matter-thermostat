@@ -44,7 +44,7 @@ class AirConditionerManager {
     struct k_work_delayable mInitRetryWork;
     struct k_work           mCommandWork;
 
-    static constexpr int kS21PollIntervalSec                  = 30;
+    static constexpr int kS21PollIntervalSec                  = 15; // poll frequently to stress-test the UART code
     static constexpr int kS21InitRetryInitialIntervalMilliSec = 500;
     static constexpr int kS21InitRetryMaximumIntervalMilliSec = 60'000;
     static void PollWorkHandler(k_work* work);
@@ -54,6 +54,7 @@ class AirConditionerManager {
     void PollOperation();
     void ExecutePendingCommands();
     static Clusters::Thermostat::SystemModeEnum OperatingModeToSystemMode(OperatingMode mode);
+    static Clusters::Thermostat::ThermostatRunningModeEnum OperatingModeToRunningMode(OperatingMode mode);
     static OperatingMode SystemModeToOperatingMode(Clusters::Thermostat::SystemModeEnum mode);
     static std::optional<FanMode> SpeedSettingToS21FanMode(uint8_t rawValue);
     static std::optional<uint8_t> S21FanModeToSpeedSetting(FanMode fanMode);
@@ -78,6 +79,7 @@ class AirConditionerManager {
     int16_t mCoolingCelsiusSetPoint{0};
     int16_t mHeatingCelsiusSetPoint{0};
     Clusters::Thermostat::SystemModeEnum mThermMode{Clusters::Thermostat::SystemModeEnum::kAuto};
+    Clusters::Thermostat::ThermostatRunningModeEnum mRunningMode{Clusters::Thermostat::ThermostatRunningModeEnum::kOff};
     FanMode mFanMode{FanMode::Auto};
 
     void OnOffAttributeChangeHandler(AttributeId attributeId, uint8_t* value, uint16_t size);

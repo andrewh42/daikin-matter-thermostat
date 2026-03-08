@@ -206,24 +206,33 @@ void S21DataLinkUart::startTransaction(const std::vector<std::byte>& encoded, bo
     std::memcpy(m_txBuf, encoded.data(), txLen);
     nrf_uarte_tx_buffer_set(m_uarte, m_txBuf, txLen);
 
-    /* Clear relevant events. */
+    /* Disable UARTE IRQ while clearing events and setting state to prevent
+     * a stale ENDRX (from a previous ERROR handler's STOPRX) from firing
+     * between event clears and STARTTX and being misprocessed as belonging
+     * to this new transaction. */
+    unsigned int irqn = DT_IRQ(DT_ALIAS(s21uart), irq);
+    irq_disable(irqn);
+
+    /* Clear all events. */
     nrf_uarte_event_clear(m_uarte, NRF_UARTE_EVENT_ENDTX);
     nrf_uarte_event_clear(m_uarte, NRF_UARTE_EVENT_ENDRX);
     nrf_uarte_event_clear(m_uarte, NRF_UARTE_EVENT_ERROR);
+    nrf_uarte_event_clear(m_uarte, NRF_UARTE_EVENT_FRAME_TIMEOUT);
     m_uarte->EVENTS_DMA.RX.MATCH[kMatchIdxETX] = 0;
     m_uarte->EVENTS_DMA.RX.MATCH[kMatchIdxACK] = 0;
     m_uarte->EVENTS_DMA.RX.MATCH[kMatchIdxNAK] = 0;
     k_msgq_purge(&m_rxMsgq);
 
-    /* Clear FRAMETIMEOUT event before starting. */
-    nrf_uarte_event_clear(m_uarte, NRF_UARTE_EVENT_FRAME_TIMEOUT);
-
     /* Reset watchdog timer so it starts from 0 when ENDTX fires (Ch A). */
     nrf_timer_task_trigger(NRF_TIMER20, NRF_TIMER_TASK_CLEAR);
     nrf_timer_event_clear(NRF_TIMER20, NRF_TIMER_EVENT_COMPARE0);
 
+    m_isrState.store(IsrState::WaitingRx, std::memory_order_relaxed);
+
     /* Fire TX — DPPI will chain: ENDTX → STARTRX + TIMER START → MATCH/COMPARE → STOPRX → ENDRX. */
     nrf_uarte_task_trigger(m_uarte, NRF_UARTE_TASK_STARTTX);
+
+    irq_enable(irqn);
 }
 
 /// @brief  Helper to identify which MATCH candidate caused the STOPRX (for logging/debugging).
@@ -248,7 +257,10 @@ const char* S21DataLinkUart::rxMatch() {
 }
 
 /* ──────────────────────────────────────────────────────────────────────
- * ISR — only wakeup per transaction
+ * ISR — state machine driven
+ *
+ * Event processing order: FRAME_TIMEOUT → ENDRX → ERROR → ENDTX.
+ * See README-S21-UART-design.md for state diagram and transition table.
  * ────────────────────────────────────────────────────────────────────── */
 
 void S21DataLinkUart::isrHandler(const void* arg)
@@ -256,52 +268,89 @@ void S21DataLinkUart::isrHandler(const void* arg)
     auto* self = const_cast<S21DataLinkUart*>(reinterpret_cast<const S21DataLinkUart*>(arg));
     NRF_UARTE_Type* uarte = self->m_uarte;
 
-    if (nrf_uarte_event_check(uarte, NRF_UARTE_EVENT_ENDRX)) {
-        nrf_uarte_event_clear(uarte, NRF_UARTE_EVENT_ENDRX);
+    /* Cache state locally; update both local and m_isrState on transitions
+     * so later handlers in the same invocation see the updated state. */
+    auto state = self->m_isrState.load(std::memory_order_relaxed);
 
-        bool timeout = nrf_timer_event_check(NRF_TIMER20, NRF_TIMER_EVENT_COMPARE0);
-
-        if (timeout) {
-            nrf_timer_event_clear(NRF_TIMER20, NRF_TIMER_EVENT_COMPARE0);
-            LOG_INF("S21DataLinkUart: RX timeout (no response)");
-        } else if (nrf_uarte_event_check(uarte, NRF_UARTE_EVENT_FRAME_TIMEOUT)) {
-            nrf_uarte_event_clear(uarte, NRF_UARTE_EVENT_FRAME_TIMEOUT);
+    /* ── FRAME_TIMEOUT ──────────────────────────────────────────────── */
+    /* Checked first so that a same-invocation FRAME_TIMEOUT transitions
+     * the state to TimedOut before the ENDRX handler reads it. */
+    if (nrf_uarte_event_check(uarte, NRF_UARTE_EVENT_FRAME_TIMEOUT)) {
+        nrf_uarte_event_clear(uarte, NRF_UARTE_EVENT_FRAME_TIMEOUT);
+        if (state == IsrState::WaitingRx) {
             LOG_INF("S21DataLinkUart: RX timeout (frame)");
-            timeout = true;
-        } else {
-            LOG_DBG("S21DataLinkUart: RX ended with %s match", self->rxMatch());
-        }
-
-        RxResult result{};
-        result.len = static_cast<uint8_t>(nrf_uarte_rx_amount_get(uarte));
-        std::memcpy(result.data, self->m_rxBuf, result.len);
-        result.status = timeout ? RxStatus::Timeout : RxStatus::Ok;
-
-        /* For transact operations with a valid frame (not a NAK), send ACK back to the AC. */
-        bool nakReceived = uarte->EVENTS_DMA.RX.MATCH[kMatchIdxNAK] > 0;
-        bool sendingAck = !timeout && !nakReceived && self->m_opType.load(std::memory_order_relaxed) == OpType::Transact;
-        if (sendingAck) {
-            LOG_DBG("S21DataLinkUart: sending ACK for transact response");
-
-            uint32_t domain_id = nrfx_gppi_domain_id_get((uint32_t)uarte);
-            nrfx_gppi_channels_disable(domain_id, BIT(self->mGppiChTxRx));
-            self->m_txBuf[0] = kACK;
-            nrf_uarte_event_clear(uarte, NRF_UARTE_EVENT_ENDTX);
-            nrf_uarte_tx_buffer_set(uarte, self->m_txBuf, 1);
-            nrf_uarte_int_enable(uarte, NRF_UARTE_INT_ENDTX_MASK);
-            nrf_uarte_task_trigger(uarte, NRF_UARTE_TASK_STARTTX);
-        }
-
-        k_msgq_put(&self->m_rxMsgq, &result, K_NO_WAIT);
-        /* When ACK is being transmitted, defer k_work_submit to the ENDTX
-         * handler so that Ch A (ENDTX→STARTRX) is re-enabled *before* the
-         * completion callback runs.  This prevents a new transaction from
-         * calling STARTTX while Ch A is still disabled. */
-        if (!sendingAck) {
-            k_work_submit(&self->m_completionWork.work);
+            state = IsrState::TimedOut;
+            self->m_isrState.store(state, std::memory_order_relaxed);
         }
     }
 
+    /* ── ENDRX ──────────────────────────────────────────────────────── */
+    if (nrf_uarte_event_check(uarte, NRF_UARTE_EVENT_ENDRX)) {
+        nrf_uarte_event_clear(uarte, NRF_UARTE_EVENT_ENDRX);
+
+        if (state == IsrState::TimedOut) {
+            /* Timeout already determined by state — put result directly. */
+            RxResult result{};
+            result.len = static_cast<uint8_t>(nrf_uarte_rx_amount_get(uarte));
+            std::memcpy(result.data, self->m_rxBuf, result.len);
+            result.status = RxStatus::Timeout;
+
+            k_msgq_put(&self->m_rxMsgq, &result, K_NO_WAIT);
+            state = IsrState::Idle;
+            self->m_isrState.store(state, std::memory_order_relaxed);
+            k_work_submit(&self->m_completionWork.work);
+
+        } else if (state == IsrState::WaitingRx) {
+            /* Check TIMER20 COMPARE0 as fallback for 200ms no-response
+             * watchdog.  (TIMER20 is on the SERIAL20 IRQ domain and cannot
+             * transition the state directly without a second ISR.) */
+            bool timeout = nrf_timer_event_check(NRF_TIMER20, NRF_TIMER_EVENT_COMPARE0);
+            if (timeout) {
+                nrf_timer_event_clear(NRF_TIMER20, NRF_TIMER_EVENT_COMPARE0);
+                LOG_INF("S21DataLinkUart: RX timeout (no response)");
+            } else {
+                LOG_DBG("S21DataLinkUart: RX ended with %s match", self->rxMatch());
+            }
+
+            /* Build result. */
+            RxResult result{};
+            result.len = static_cast<uint8_t>(nrf_uarte_rx_amount_get(uarte));
+            std::memcpy(result.data, self->m_rxBuf, result.len);
+            result.status = timeout ? RxStatus::Timeout : RxStatus::Ok;
+
+            bool nakReceived = uarte->EVENTS_DMA.RX.MATCH[kMatchIdxNAK] > 0;
+            bool needsAck = !timeout && !nakReceived
+                            && self->m_opType.load(std::memory_order_relaxed) == OpType::Transact;
+
+            /* Put result first, then conditionally send ACK. */
+            k_msgq_put(&self->m_rxMsgq, &result, K_NO_WAIT);
+
+            if (needsAck) {
+                /* Disable Ch A so ACK TX doesn't chain into STARTRX. */
+                LOG_DBG("S21DataLinkUart: sending ACK for transact response");
+                uint32_t domain_id = nrfx_gppi_domain_id_get((uint32_t)uarte);
+                nrfx_gppi_channels_disable(domain_id, BIT(self->mGppiChTxRx));
+                self->m_txBuf[0] = kACK;
+                nrf_uarte_event_clear(uarte, NRF_UARTE_EVENT_ENDTX);
+                nrf_uarte_tx_buffer_set(uarte, self->m_txBuf, 1);
+                nrf_uarte_int_enable(uarte, NRF_UARTE_INT_ENDTX_MASK);
+                nrf_uarte_task_trigger(uarte, NRF_UARTE_TASK_STARTTX);
+
+                state = IsrState::SendingAck;
+                self->m_isrState.store(state, std::memory_order_relaxed);
+            } else {
+                state = IsrState::Idle;
+                self->m_isrState.store(state, std::memory_order_relaxed);
+                k_work_submit(&self->m_completionWork.work);
+            }
+
+        } else {
+            /* SendingAck or Idle: stale ENDRX (from prior STOPRX). Ignore. */
+            LOG_DBG("S21DataLinkUart: ENDRX in state %u, ignoring", static_cast<unsigned>(state));
+        }
+    }
+
+    /* ── ERROR ──────────────────────────────────────────────────────── */
     if (nrf_uarte_event_check(uarte, NRF_UARTE_EVENT_ERROR)) {
         nrf_uarte_event_clear(uarte, NRF_UARTE_EVENT_ERROR);
         uint32_t errSrc = nrf_uarte_errorsrc_get_and_clear(uarte);
@@ -311,31 +360,38 @@ void S21DataLinkUart::isrHandler(const void* arg)
             (errSrc & UARTE_ERRORSRC_FRAMING_Msk) ? "framing " : "",
             (errSrc & UARTE_ERRORSRC_BREAK_Msk) ? "break " : "");
 
-        /* Stop any ongoing RX. */
-        nrf_uarte_task_trigger(uarte, NRF_UARTE_TASK_STOPRX);
+        if (state == IsrState::WaitingRx) {
+            nrf_uarte_task_trigger(uarte, NRF_UARTE_TASK_STOPRX);
 
-        RxResult result{};
-        result.len = 0;
-        result.status = RxStatus::UartError;
-        k_msgq_put(&self->m_rxMsgq, &result, K_NO_WAIT);
-        k_work_submit(&self->m_completionWork.work);
+            RxResult result{};
+            result.len = 0;
+            result.status = RxStatus::UartError;
+            k_msgq_put(&self->m_rxMsgq, &result, K_NO_WAIT);
+
+            state = IsrState::Idle;
+            self->m_isrState.store(state, std::memory_order_relaxed);
+            k_work_submit(&self->m_completionWork.work);
+        }
+        /* SendingAck, TimedOut, or Idle: result already queued or pending.
+         * Error source is logged above; no further action needed. */
     }
 
-    /* FRAMETIMEOUT without ENDRX — clear it to avoid spurious interrupts. */
-    if (nrf_uarte_event_check(uarte, NRF_UARTE_EVENT_FRAME_TIMEOUT)) {
-        nrf_uarte_event_clear(uarte, NRF_UARTE_EVENT_FRAME_TIMEOUT);
-    }
-
-    /* ENDTX — ACK byte transmitted.
-     * Re-enable Ch A (ENDTX→STARTRX) *before* notifying the completion
-     * handler so that a new transaction can safely call STARTTX immediately
-     * from within the callback without racing against the Ch A enable. */
+    /* ── ENDTX ──────────────────────────────────────────────────────── */
+    /* ACK byte transmitted. Re-enable Ch A (ENDTX→STARTRX) *before*
+     * submitting work so that a new transaction can safely call STARTTX
+     * immediately from within the callback. */
     if (nrf_uarte_event_check(uarte, NRF_UARTE_EVENT_ENDTX)) {
         nrf_uarte_event_clear(uarte, NRF_UARTE_EVENT_ENDTX);
         nrf_uarte_int_disable(uarte, NRF_UARTE_INT_ENDTX_MASK);
-        uint32_t domain_id = nrfx_gppi_domain_id_get((uint32_t)uarte);
-        nrfx_gppi_channels_enable(domain_id, BIT(self->mGppiChTxRx));
-        k_work_submit(&self->m_completionWork.work);
+
+        if (state == IsrState::SendingAck) {
+            uint32_t domain_id = nrfx_gppi_domain_id_get((uint32_t)uarte);
+            nrfx_gppi_channels_enable(domain_id, BIT(self->mGppiChTxRx));
+
+            self->m_isrState.store(IsrState::Idle, std::memory_order_relaxed);
+            k_work_submit(&self->m_completionWork.work);
+        }
+        /* Other states: stale ENDTX, ignore. */
     }
 }
 
@@ -370,9 +426,12 @@ void S21DataLinkUart::completionWorkHandler(struct k_work* work)
 
     RxResult result{};
     if (k_msgq_get(&self->m_rxMsgq, &result, K_NO_WAIT) != 0) {
-        LOG_ERR("completion: msgq empty");
-        self->m_opType.store(OpType::None);
-        return;
+        LOG_ERR("completion: msgq empty (ISR state machine invariant violated)");
+        __ASSERT(false, "completionWorkHandler: msgq empty");
+        /* In release builds: synthesise an error so the callback fires
+         * and k_sem_give is called, preventing a deadlock. */
+        result.len = 0;
+        result.status = RxStatus::UartError;
     }
 
     /* Disable match filters until the next operation. */
@@ -420,5 +479,8 @@ void S21DataLinkUart::completionWorkHandler(struct k_work* work)
         else {
             cb(std::move(*decoded));
         }
+    }
+    else {
+        LOG_WRN("completion: opType was None (stale work submit?)");
     }
 }

@@ -9,7 +9,7 @@
 
 LOG_MODULE_DECLARE(app, CONFIG_MATTER_LOG_LEVEL);
 
-static constexpr auto kS21CacheMaxAge = std::chrono::seconds{10};
+static constexpr auto kS21CacheMaxAge = std::chrono::seconds{5};
 
 S21Stack::S21Stack()
         : mDataLink(NRF_UARTE21)
