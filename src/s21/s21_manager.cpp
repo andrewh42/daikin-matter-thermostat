@@ -60,6 +60,8 @@ template tl::expected<S21Presentation::GetOperationResult, S21PresentationError>
     S21Manager::ReadThroughCache<S21Presentation::GetOperationResult>::get();
 template tl::expected<S21Presentation::GetCoarseTemperatureAndHumidityResult, S21PresentationError>
     S21Manager::ReadThroughCache<S21Presentation::GetCoarseTemperatureAndHumidityResult>::get();
+template tl::expected<FanMode, S21PresentationError>
+    S21Manager::ReadThroughCache<FanMode>::get();
 
 // ── S21Manager ────────────────────────────────────────────────────────────
 
@@ -79,6 +81,10 @@ S21Manager::S21Manager(S21PresentationSync& presentation,
                       mCoarseTemperatureAndHumidityCapability.record(r);
                       return r;
                   })
+        , mFanModeCache("fan_mode", cacheMaxAge, timeSource, [this] {
+              return mFanModeCapability.callWithTracking(
+                  [this] { return mPresentation.getFanMode(); });
+          })
 {}
 
 int S21Manager::Init()
@@ -127,6 +133,15 @@ auto S21Manager::getOperation() -> Result<S21Presentation::GetOperationResult>
     if (!isReady()) return notReady();
     auto op = mOperationCache.get();
     if (!op) return presentationError(op.error());
+    // Known issue: getOperation() (F1 command) may report Auto when the fan mode
+    // is actually Quiet. Cross-check with getFanMode() (RG command) in that case.
+    if (std::get<3>(*op) == FanMode::Auto) {
+        auto fanMode = mFanModeCache.get();
+        if (fanMode) {
+            return std::make_tuple(std::get<0>(*op), std::get<1>(*op),
+                                   std::get<2>(*op), *fanMode);
+        }
+    }
     return *op;
 }
 
@@ -159,8 +174,7 @@ auto S21Manager::getSetpoint() -> Result<int16_t>
 auto S21Manager::getFanMode() -> Result<FanMode>
 {
     if (!isReady()) return notReady();
-    auto result = mFanModeCapability.callWithTracking(
-        [this] { return mPresentation.getFanMode(); });
+    auto result = mFanModeCache.get();
     if (result) return *result;
     auto op = mOperationCache.get();
     if (!op) return presentationError(op.error());

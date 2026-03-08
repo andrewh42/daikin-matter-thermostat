@@ -206,4 +206,5 @@ class S21Manager {
     // access fully-initialized members when get() is eventually called.
     ReadThroughCache<S21Presentation::GetOperationResult>                    mOperationCache;
     ReadThroughCache<S21Presentation::GetCoarseTemperatureAndHumidityResult> mCoarseTemperatureAndHumidityCache;
+    ReadThroughCache<FanMode>                                                mFanModeCache;
 };
