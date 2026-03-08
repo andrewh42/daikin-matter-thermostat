@@ -85,7 +85,7 @@ exit:
     k_work_init(&mCommandWork, CommandWorkHandler);
 
     if (mS21Manager->Init() == 0) {
-        k_work_reschedule_for_queue(&mS21WorkQueue, &mPollWork, K_SECONDS(kS21PollIntervalSec));
+        k_work_reschedule_for_queue(&mS21WorkQueue, &mPollWork, K_NO_WAIT);
     }
     else {
         LOG_DBG("S21Manager initialisation failed, will retry initialisation in %d ms", mInitRetryIntervalMs);
@@ -238,7 +238,7 @@ void AirConditionerManager::InitRetryWorkHandler(k_work* work)
     if (err == 0) {
         __ASSERT(self.mS21Manager->isReady(), "S21Manager::Init() succeeded but manager is not ready");
         LOG_DBG("S21Manager is ready, starting polling work");
-        k_work_reschedule_for_queue(&self.mS21WorkQueue, &self.mPollWork, K_SECONDS(kS21PollIntervalSec));
+        k_work_reschedule_for_queue(&self.mS21WorkQueue, &self.mPollWork, K_NO_WAIT);
     }
     else {
         LOG_DBG("S21Manager initialisation failed, will retry in %d ms", self.mInitRetryIntervalMs);
