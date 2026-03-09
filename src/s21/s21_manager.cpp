@@ -8,7 +8,7 @@
 #ifdef __ZEPHYR__
 #include <zephyr/logging/log.h>
 
-LOG_MODULE_REGISTER(s21_manager, LOG_LEVEL_DBG);
+LOG_MODULE_REGISTER(s21_manager, LOG_LEVEL_INF);
 #endif
 
 // ── CommandCapability ─────────────────────────────────────────────────────

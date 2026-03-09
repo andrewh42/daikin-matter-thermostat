@@ -36,6 +36,7 @@ class AirConditionerManager {
     DataModel::Nullable<int16_t> GetOutdoorTemp();
 
     void LogThermostatStatus();
+    void LogMatterThermostatStatus();
 
   private:
     S21Manager* mS21Manager{nullptr};
@@ -54,6 +55,8 @@ class AirConditionerManager {
     void PollOperation();
     uint8_t UpdateOperationLocalState(const S21Presentation::GetOperationResult& operationResult);
     void ExecutePendingCommands();
+    static const char* GetSystemModeStr(app::Clusters::Thermostat::SystemModeEnum mode);
+    static const char* GetRunningModeStr(app::Clusters::Thermostat::ThermostatRunningModeEnum mode);
     static Clusters::Thermostat::SystemModeEnum OperatingModeToSystemMode(OperatingMode mode);
     static Clusters::Thermostat::ThermostatRunningModeEnum OperatingModeToRunningMode(OperatingMode mode);
     static OperatingMode SystemModeToOperatingMode(Clusters::Thermostat::SystemModeEnum mode);
@@ -88,7 +91,7 @@ class AirConditionerManager {
     DataModel::Nullable<uint16_t> mHumidity;
     int16_t mCoolingCelsiusSetPoint{0};
     int16_t mHeatingCelsiusSetPoint{0};
-    Clusters::Thermostat::SystemModeEnum mThermMode{Clusters::Thermostat::SystemModeEnum::kAuto};
+    Clusters::Thermostat::SystemModeEnum mSystemMode{Clusters::Thermostat::SystemModeEnum::kAuto};
     Clusters::Thermostat::ThermostatRunningModeEnum mRunningMode{Clusters::Thermostat::ThermostatRunningModeEnum::kOff};
     FanMode mFanMode{FanMode::Auto};
 
@@ -96,6 +99,5 @@ class AirConditionerManager {
     void TemperatureAttributeChangeHandler(AttributeId attributeId, uint8_t* value, uint16_t size);
     void FanControlAttributeChangeHandler(AttributeId attributeId, uint8_t* value, uint16_t size);
     CHIP_ERROR InitLed();
-    const char* GetThermModeStr();
     void UpdatePowerIndicator();
 };

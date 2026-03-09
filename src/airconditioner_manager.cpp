@@ -14,7 +14,7 @@
 #include <optional>
 #include <atomic>
 
-LOG_MODULE_DECLARE(app, CONFIG_CHIP_APP_LOG_LEVEL);
+LOG_MODULE_REGISTER(aircon_mgr, LOG_LEVEL_DBG);
 
 using namespace chip;
 using namespace ::chip::DeviceLayer;
@@ -67,7 +67,7 @@ CHIP_ERROR AirConditionerManager::Init(S21Manager& s21Manager)
                  err = CHIP_IM_GLOBAL_STATUS(Failure));
     VerifyOrExit(Status::Success == OccupiedHeatingSetpoint::Get(kThermostatEndpoint, &mHeatingCelsiusSetPoint),
                  err = CHIP_IM_GLOBAL_STATUS(Failure));
-    VerifyOrExit(Status::Success == SystemMode::Get(kThermostatEndpoint, &mThermMode),
+    VerifyOrExit(Status::Success == SystemMode::Get(kThermostatEndpoint, &mSystemMode),
                  err = CHIP_IM_GLOBAL_STATUS(Failure));
 
 exit:
@@ -150,30 +150,36 @@ uint8_t AirConditionerManager::UpdateOperationLocalState(const S21Presentation::
     uint8_t changed = 0;
 
     if (onOff != mOnOff) {
+        LOG_DBG("On/Off changed from %d -> %d", mOnOff, onOff);
         mOnOff = onOff;
         changed |= kChangedOnOff;
     }
-    if (systemMode != mThermMode) {
-        mThermMode = systemMode;
+    if (systemMode != mSystemMode) {
+        LOG_DBG("Thermostat mode changed from %s -> %s", GetSystemModeStr(mSystemMode), GetSystemModeStr(systemMode));
+        mSystemMode = systemMode;
         changed |= kChangedMode;
     }
     if (runningMode != mRunningMode) {
+        LOG_DBG("Running mode changed from %s -> %s", GetRunningModeStr(mRunningMode), GetRunningModeStr(runningMode));
         mRunningMode = runningMode;
         changed |= kChangedRunningMode;
     }
     if ((mode == OperatingMode::Cool || mode == OperatingMode::Auto_Cooling ||
          mode == OperatingMode::Auto) &&
         setpoint != mCoolingCelsiusSetPoint) {
+        LOG_DBG("Cooling setpoint changed from %d -> %d", mCoolingCelsiusSetPoint, setpoint);
         mCoolingCelsiusSetPoint = setpoint;
         changed |= kChangedCooling;
     }
     if ((mode == OperatingMode::Heat || mode == OperatingMode::Auto_Heating ||
          mode == OperatingMode::Auto) &&
         setpoint != mHeatingCelsiusSetPoint) {
+        LOG_DBG("Heating setpoint changed from %d -> %d", mHeatingCelsiusSetPoint, setpoint);
         mHeatingCelsiusSetPoint = setpoint;
         changed |= kChangedHeating;
     }
     if (fanMode != mFanMode) {
+        LOG_DBG("Fan mode changed from %d -> %d", static_cast<int>(mFanMode), static_cast<int>(fanMode));
         mFanMode = fanMode;
         changed |= kChangedFanMode;
     }
@@ -292,9 +298,9 @@ CHIP_ERROR AirConditionerManager::InitLed()
     return CHIP_NO_ERROR;
 }
 
-const char* AirConditionerManager::GetThermModeStr()
+const char* AirConditionerManager::GetSystemModeStr(app::Clusters::Thermostat::SystemModeEnum mode)
 {
-    switch (mThermMode) {
+    switch (mode) {
     case app::Clusters::Thermostat::SystemModeEnum::kOff:
         return "Off";
     case app::Clusters::Thermostat::SystemModeEnum::kAuto:
@@ -318,10 +324,23 @@ const char* AirConditionerManager::GetThermModeStr()
     }
 }
 
+const char* AirConditionerManager::GetRunningModeStr(app::Clusters::Thermostat::ThermostatRunningModeEnum mode) {
+    switch (mode) {
+    case app::Clusters::Thermostat::ThermostatRunningModeEnum::kOff:
+        return "Off";
+    case app::Clusters::Thermostat::ThermostatRunningModeEnum::kCool:
+        return "Cool";
+    case app::Clusters::Thermostat::ThermostatRunningModeEnum::kHeat:
+        return "Heat";
+    default:
+        return "Unknown Mode";
+    }
+}
+
 void AirConditionerManager::LogThermostatStatus()
 {
     LOG_INF("Thermostat:");
-    LOG_INF("	Mode - %s", GetThermModeStr());
+    LOG_INF("	Mode - %s", GetSystemModeStr(mSystemMode));
     if (!(GetLocalTemp().IsNull())) {
         int16_t tempValue = GetLocalTemp().Value();
         LOG_INF("	LocalTemperature - %d,%d'C", ReturnCompleteValue(tempValue), ReturnRemainderValue(tempValue));
@@ -340,6 +359,34 @@ void AirConditionerManager::LogThermostatStatus()
             ReturnRemainderValue(mHeatingCelsiusSetPoint));
     LOG_INF("	CoolingSetpoint - %d,%d'C \n", ReturnCompleteValue(mCoolingCelsiusSetPoint),
             ReturnRemainderValue(mCoolingCelsiusSetPoint));
+}
+
+void AirConditionerManager::LogMatterThermostatStatus()
+{
+    Protocols::InteractionModel::Status statusSystemMode, statusRunningMode;
+    app::Clusters::Thermostat::SystemModeEnum systemMode;
+    app::Clusters::Thermostat::ThermostatRunningModeEnum runningMode;
+
+    LOG_INF("Matter Thermostat Cluster State:");
+
+    PlatformMgr().LockChipStack();
+    statusSystemMode = SystemMode::Get(kThermostatEndpoint, &systemMode);
+    statusRunningMode = ThermostatRunningMode::Get(kThermostatEndpoint, &runningMode);
+    PlatformMgr().UnlockChipStack();
+
+    if (statusSystemMode == Protocols::InteractionModel::Status::Success) {
+        LOG_INF("	System Mode - %s", GetSystemModeStr(systemMode));
+    }
+    else {
+        LOG_INF("	System Mode - Error reading attribute: %d", static_cast<uint8_t>(statusSystemMode));
+    }
+
+    if (statusRunningMode == Protocols::InteractionModel::Status::Success) {
+        LOG_INF("	Running Mode - %s", GetRunningModeStr(runningMode));
+    }
+    else {
+        LOG_INF("	Running Mode - Error reading attribute: %d", static_cast<uint8_t>(statusRunningMode));
+    }
 }
 
 void AirConditionerManager::AttributeChangeHandler(const ConcreteAttributePath& attributePath, uint8_t* value,
@@ -391,8 +438,8 @@ void AirConditionerManager::TemperatureAttributeChangeHandler(AttributeId attrib
         if (mCoolingCelsiusSetPoint != coolingSetpoint) {
             LOG_INF("Cooling TEMP %d -> %d", mCoolingCelsiusSetPoint, coolingSetpoint);
             mCoolingCelsiusSetPoint = coolingSetpoint;
-            if (mThermMode == app::Clusters::Thermostat::SystemModeEnum::kCool ||
-                mThermMode == app::Clusters::Thermostat::SystemModeEnum::kAuto) {
+            if (mSystemMode == app::Clusters::Thermostat::SystemModeEnum::kCool ||
+                mSystemMode == app::Clusters::Thermostat::SystemModeEnum::kAuto) {
                 mPendingCommandFlags.fetch_or(kCommandOperation);
                 k_work_submit_to_queue(&mS21WorkQueue, &mCommandWork);
             }
@@ -407,8 +454,8 @@ void AirConditionerManager::TemperatureAttributeChangeHandler(AttributeId attrib
         if (mHeatingCelsiusSetPoint != heatingSetpoint) {
             LOG_INF("Heating TEMP %d -> %d", mHeatingCelsiusSetPoint, heatingSetpoint);
             mHeatingCelsiusSetPoint = heatingSetpoint;
-            if (mThermMode == app::Clusters::Thermostat::SystemModeEnum::kHeat ||
-                mThermMode == app::Clusters::Thermostat::SystemModeEnum::kAuto) {
+            if (mSystemMode == app::Clusters::Thermostat::SystemModeEnum::kHeat ||
+                mSystemMode == app::Clusters::Thermostat::SystemModeEnum::kAuto) {
                 mPendingCommandFlags.fetch_or(kCommandOperation);
                 k_work_submit_to_queue(&mS21WorkQueue, &mCommandWork);
             }
@@ -420,19 +467,22 @@ void AirConditionerManager::TemperatureAttributeChangeHandler(AttributeId attrib
 
     case SystemMode::Id: {
         auto thermMode = static_cast<app::Clusters::Thermostat::SystemModeEnum>(*value);
-        if (mThermMode != thermMode) {
-            mThermMode = thermMode;
-            LOG_INF("System Mode changed to %s", GetThermModeStr());
-            if (mThermMode != app::Clusters::Thermostat::SystemModeEnum::kOff) {
+        if (mSystemMode != thermMode) {
+            LOG_INF("System Mode changed %s -> %s", GetSystemModeStr(mSystemMode), GetSystemModeStr(thermMode));
+            mSystemMode = thermMode;
+            if (thermMode != app::Clusters::Thermostat::SystemModeEnum::kOff) {
                 mPendingCommandFlags.fetch_or(kCommandOperation);
                 k_work_submit_to_queue(&mS21WorkQueue, &mCommandWork);
             }
         }
         else {
-            LOG_DBG("System Mode: %s (unchanged)", GetThermModeStr());
+            LOG_DBG("System Mode: %s (unchanged)", GetSystemModeStr(thermMode));
         }
     } break;
 
+    case ThermostatRunningMode::Id:
+        LOG_INF("ThermostatRunningMode changed to %u", *value);
+        break;
     default: {
         LOG_ERR("Unhandled thermostat attribute %x", attributeId);
         return;
@@ -440,6 +490,7 @@ void AirConditionerManager::TemperatureAttributeChangeHandler(AttributeId attrib
     }
 
     LogThermostatStatus();
+    LogMatterThermostatStatus();
 }
 
 void AirConditionerManager::FanControlAttributeChangeHandler(AttributeId attributeId, uint8_t* value,
@@ -501,7 +552,7 @@ void AirConditionerManager::ExecutePendingCommands()
     uint32_t flags = mPendingCommandFlags.exchange(0);
 
     if (flags & kCommandOperation) {
-        auto mode        = SystemModeToOperatingMode(mThermMode);
+        auto mode        = SystemModeToOperatingMode(mSystemMode);
         int16_t setpoint = (mode == OperatingMode::Heat || mode == OperatingMode::Auto_Heating)
                            ? mHeatingCelsiusSetPoint : mCoolingCelsiusSetPoint;
         LOG_INF("Sending setOperation(onOff=%s, mode=%u, setpoint=%d, fan=%u) to S21",
