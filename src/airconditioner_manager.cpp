@@ -47,6 +47,14 @@ uint8_t ReturnRemainderValue(int16_t Value)
     return static_cast<uint8_t>((Value % 100 + 5) / 10);
 }
 
+/* Check a Matter attribute Set() return value and log on failure. */
+#define SET_AND_LOG(attr_call)                                              \
+    do {                                                                    \
+        auto _status = (attr_call);                                         \
+        if (_status != Status::Success)                                     \
+            LOG_ERR(#attr_call " failed: 0x%x", to_underlying(_status));    \
+    } while (0)
+
 } /* namespace */
 
 CHIP_ERROR AirConditionerManager::Init(S21Manager& s21Manager)
@@ -69,6 +77,26 @@ CHIP_ERROR AirConditionerManager::Init(S21Manager& s21Manager)
                  err = CHIP_IM_GLOBAL_STATUS(Failure));
     VerifyOrExit(Status::Success == SystemMode::Get(kThermostatEndpoint, &mSystemMode),
                  err = CHIP_IM_GLOBAL_STATUS(Failure));
+    VerifyOrExit(Status::Success == OnOff::Attributes::OnOff::Get(kThermostatEndpoint, &mOnOff),
+                    err = CHIP_IM_GLOBAL_STATUS(Failure));
+
+    {
+        using namespace chip::app::Clusters::FanControl;
+        DataModel::Nullable<uint8_t> initSpeedSetting;
+        VerifyOrExit(Status::Success == Attributes::SpeedSetting::Get(kThermostatEndpoint, initSpeedSetting),
+                     err = CHIP_IM_GLOBAL_STATUS(Failure));
+        if (initSpeedSetting.IsNull()) {
+            mFanMode = ::FanMode::Auto;
+        } else {
+            auto mapped = SpeedSettingToS21FanMode(initSpeedSetting.Value());
+            if (mapped) {
+                mFanMode = *mapped;
+            } else {
+                LOG_WRN("Unsupported initial fan speed setting %d, defaulting to Auto", initSpeedSetting.Value());
+                mFanMode = ::FanMode::Auto;
+            }
+        }
+    }
 
 exit:
     PlatformMgr().UnlockChipStack();
@@ -92,6 +120,7 @@ exit:
         k_work_reschedule_for_queue(&mS21WorkQueue, &mInitRetryWork, K_MSEC(mInitRetryIntervalMs));
     }
 
+    UpdatePowerIndicator();
     LOG_DBG("AirConditionerManager initialised successfully");
     return CHIP_NO_ERROR;
 }
@@ -131,9 +160,9 @@ void AirConditionerManager::PollSensors()
         std::optional<uint16_t> humidityVal  = humidityChanged ? std::optional<uint16_t>(*humidity * 100) : std::nullopt;
         Nrf::PostTask([indoorVal, outdoorVal, humidityVal] {
             PlatformMgr().LockChipStack();
-            if (indoorVal)   LocalTemperature::Set(kThermostatEndpoint, *indoorVal);
-            if (outdoorVal)  OutdoorTemperature::Set(kThermostatEndpoint, *outdoorVal);
-            if (humidityVal) MeasuredValue::Set(kHumiditySensorEndpoint, *humidityVal);
+            if (indoorVal)   SET_AND_LOG(LocalTemperature::Set(kThermostatEndpoint, *indoorVal));
+            if (outdoorVal)  SET_AND_LOG(OutdoorTemperature::Set(kThermostatEndpoint, *outdoorVal));
+            if (humidityVal) SET_AND_LOG(MeasuredValue::Set(kHumiditySensorEndpoint, *humidityVal));
             PlatformMgr().UnlockChipStack();
         });
     } else {
@@ -214,20 +243,20 @@ void AirConditionerManager::PollOperation()
     Nrf::PostTask([onOff, mode, setpoint, fanMode, changed] {
         using namespace chip::app::Clusters::FanControl;
         PlatformMgr().LockChipStack();
-        if (changed & kChangedOnOff)       OnOff::Attributes::OnOff::Set(kThermostatEndpoint, onOff);
-        if (changed & kChangedMode)        SystemMode::Set(kThermostatEndpoint, OperatingModeToSystemMode(mode));
-        if (changed & kChangedRunningMode) ThermostatRunningMode::Set(kThermostatEndpoint, OperatingModeToRunningMode(mode));
-        if (changed & kChangedCooling)     OccupiedCoolingSetpoint::Set(kThermostatEndpoint, setpoint);
-        if (changed & kChangedHeating)     OccupiedHeatingSetpoint::Set(kThermostatEndpoint, setpoint);
+        if (changed & kChangedOnOff)       SET_AND_LOG(OnOff::Attributes::OnOff::Set(kThermostatEndpoint, onOff));
+        if (changed & kChangedMode)        SET_AND_LOG(SystemMode::Set(kThermostatEndpoint, OperatingModeToSystemMode(mode)));
+        if (changed & kChangedRunningMode) SET_AND_LOG(ThermostatRunningMode::Set(kThermostatEndpoint, OperatingModeToRunningMode(mode)));
+        if (changed & kChangedCooling)     SET_AND_LOG(OccupiedCoolingSetpoint::Set(kThermostatEndpoint, setpoint));
+        if (changed & kChangedHeating)     SET_AND_LOG(OccupiedHeatingSetpoint::Set(kThermostatEndpoint, setpoint));
         if (changed & kChangedFanMode) {
             auto speedSetting = S21FanModeToSpeedSetting(fanMode);
             if (speedSetting.has_value()) {
-                Attributes::SpeedSetting::Set(kThermostatEndpoint, DataModel::MakeNullable(*speedSetting));
+                SET_AND_LOG(Attributes::SpeedSetting::Set(kThermostatEndpoint, DataModel::MakeNullable(*speedSetting)));
             } else {
                 // Auto: write FanMode=kAuto and let the cluster server set SpeedSetting to null.
                 // Writing null directly to SpeedSetting is rejected (InvalidInState) by the
                 // fan-control-server unless the write originates from cluster logic.
-                Attributes::FanMode::Set(kThermostatEndpoint, FanModeEnum::kAuto);
+                SET_AND_LOG(Attributes::FanMode::Set(kThermostatEndpoint, FanModeEnum::kAuto));
             }
         }
         PlatformMgr().UnlockChipStack();
@@ -363,29 +392,101 @@ void AirConditionerManager::LogThermostatStatus()
 
 void AirConditionerManager::LogMatterThermostatStatus()
 {
-    Protocols::InteractionModel::Status statusSystemMode, statusRunningMode;
+    using Status = Protocols::InteractionModel::Status;
+
     app::Clusters::Thermostat::SystemModeEnum systemMode;
     app::Clusters::Thermostat::ThermostatRunningModeEnum runningMode;
+    DataModel::Nullable<int16_t> localTemp, outdoorTemp, coilTemp;
+    int16_t coolingSetpoint, heatingSetpoint;
+    int8_t deadBand;
+    chip::BitMask<app::Clusters::Thermostat::HVACSystemTypeBitmap> hvacType;
+    app::Clusters::Thermostat::ControlSequenceOfOperationEnum ctrlSeq;
+
+    PlatformMgr().LockChipStack();
+    Status sSystemMode   = SystemMode::Get(kThermostatEndpoint, &systemMode);
+    Status sRunningMode  = ThermostatRunningMode::Get(kThermostatEndpoint, &runningMode);
+    Status sLocalTemp    = LocalTemperature::Get(kThermostatEndpoint, localTemp);
+    Status sOutdoorTemp  = OutdoorTemperature::Get(kThermostatEndpoint, outdoorTemp);
+    Status sCoilTemp     = ACCoilTemperature::Get(kThermostatEndpoint, coilTemp);
+    Status sCooling      = OccupiedCoolingSetpoint::Get(kThermostatEndpoint, &coolingSetpoint);
+    Status sHeating      = OccupiedHeatingSetpoint::Get(kThermostatEndpoint, &heatingSetpoint);
+    Status sDeadBand     = MinSetpointDeadBand::Get(kThermostatEndpoint, &deadBand);
+    Status sHvacType     = HVACSystemTypeConfiguration::Get(kThermostatEndpoint, &hvacType);
+    Status sCtrlSeq      = ControlSequenceOfOperation::Get(kThermostatEndpoint, &ctrlSeq);
+    PlatformMgr().UnlockChipStack();
 
     LOG_INF("Matter Thermostat Cluster State:");
 
-    PlatformMgr().LockChipStack();
-    statusSystemMode = SystemMode::Get(kThermostatEndpoint, &systemMode);
-    statusRunningMode = ThermostatRunningMode::Get(kThermostatEndpoint, &runningMode);
-    PlatformMgr().UnlockChipStack();
-
-    if (statusSystemMode == Protocols::InteractionModel::Status::Success) {
+    if (sSystemMode == Status::Success) {
         LOG_INF("	System Mode - %s", GetSystemModeStr(systemMode));
-    }
-    else {
-        LOG_INF("	System Mode - Error reading attribute: %d", static_cast<uint8_t>(statusSystemMode));
+    } else {
+        LOG_INF("	System Mode - Error: %d", static_cast<uint8_t>(sSystemMode));
     }
 
-    if (statusRunningMode == Protocols::InteractionModel::Status::Success) {
+    if (sRunningMode == Status::Success) {
         LOG_INF("	Running Mode - %s", GetRunningModeStr(runningMode));
+    } else {
+        LOG_INF("	Running Mode - Error: %d", static_cast<uint8_t>(sRunningMode));
     }
-    else {
-        LOG_INF("	Running Mode - Error reading attribute: %d", static_cast<uint8_t>(statusRunningMode));
+
+    if (sLocalTemp == Status::Success) {
+        if (!localTemp.IsNull()) {
+            LOG_INF("	LocalTemperature - %d.%d'C", ReturnCompleteValue(localTemp.Value()), ReturnRemainderValue(localTemp.Value()));
+        } else {
+            LOG_INF("	LocalTemperature - No Value");
+        }
+    } else {
+        LOG_INF("	LocalTemperature - Error: %d", static_cast<uint8_t>(sLocalTemp));
+    }
+
+    if (sOutdoorTemp == Status::Success) {
+        if (!outdoorTemp.IsNull()) {
+            LOG_INF("	OutdoorTemperature - %d.%d'C", ReturnCompleteValue(outdoorTemp.Value()), ReturnRemainderValue(outdoorTemp.Value()));
+        } else {
+            LOG_INF("	OutdoorTemperature - No Value");
+        }
+    } else {
+        LOG_INF("	OutdoorTemperature - Error: %d", static_cast<uint8_t>(sOutdoorTemp));
+    }
+
+    if (sCoilTemp == Status::Success) {
+        if (!coilTemp.IsNull()) {
+            LOG_INF("	ACCoilTemperature - %d.%d'C", ReturnCompleteValue(coilTemp.Value()), ReturnRemainderValue(coilTemp.Value()));
+        } else {
+            LOG_INF("	ACCoilTemperature - No Value");
+        }
+    } else {
+        LOG_INF("	ACCoilTemperature - Error: %d", static_cast<uint8_t>(sCoilTemp));
+    }
+
+    if (sCooling == Status::Success) {
+        LOG_INF("	OccupiedCoolingSetpoint - %d.%d'C", ReturnCompleteValue(coolingSetpoint), ReturnRemainderValue(coolingSetpoint));
+    } else {
+        LOG_INF("	OccupiedCoolingSetpoint - Error: %d", static_cast<uint8_t>(sCooling));
+    }
+
+    if (sHeating == Status::Success) {
+        LOG_INF("	OccupiedHeatingSetpoint - %d.%d'C", ReturnCompleteValue(heatingSetpoint), ReturnRemainderValue(heatingSetpoint));
+    } else {
+        LOG_INF("	OccupiedHeatingSetpoint - Error: %d", static_cast<uint8_t>(sHeating));
+    }
+
+    if (sDeadBand == Status::Success) {
+        LOG_INF("	MinSetpointDeadBand - %d.%d'C", deadBand / 10, deadBand % 10);
+    } else {
+        LOG_INF("	MinSetpointDeadBand - Error: %d", static_cast<uint8_t>(sDeadBand));
+    }
+
+    if (sHvacType == Status::Success) {
+        LOG_INF("	HVACSystemTypeConfiguration - 0x%02x", hvacType.Raw());
+    } else {
+        LOG_INF("	HVACSystemTypeConfiguration - Error: %d", static_cast<uint8_t>(sHvacType));
+    }
+
+    if (sCtrlSeq == Status::Success) {
+        LOG_INF("	ControlSequenceOfOperation - %u", static_cast<uint8_t>(ctrlSeq));
+    } else {
+        LOG_INF("	ControlSequenceOfOperation - Error: %d", static_cast<uint8_t>(sCtrlSeq));
     }
 }
 

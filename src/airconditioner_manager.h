@@ -63,12 +63,23 @@ class AirConditionerManager {
     static std::optional<FanMode> SpeedSettingToS21FanMode(uint8_t rawValue);
     static std::optional<uint8_t> S21FanModeToSpeedSetting(FanMode fanMode);
 
-    // mPendingCommandFlags is written from the Matter thread (fetch_or) and from the S21 work
-    // queue thread (exchange). All other mutable state is read/written only from the S21 work
-    // queue thread (PollOperation, ExecutePendingCommands) and from the Matter callback thread
-    // (AttributeChangeHandler). On ARM Cortex-M, aligned reads/writes of ≤4 bytes are
-    // hardware-atomic; the compiler cannot cache struct member reads across opaque calls like
-    // k_work_submit_to_queue, so these accesses are safe in practice without additional atomics.
+    // Thread safety model:
+    //
+    // mPendingCommandFlags is std::atomic and accessed from both threads via fetch_or/exchange.
+    //
+    // All other mutable state (mOnOff, mSystemMode, mRunningMode, mCoolingCelsiusSetPoint,
+    // mHeatingCelsiusSetPoint, mFanMode, mLocalTempCelsius, mOutdoorTempCelsius, mHumidity)
+    // is accessed from two threads:
+    //   - Matter callback thread: writes in AttributeChangeHandler and sub-handlers
+    //   - S21 work queue thread: reads/writes in PollOperation, PollSensors, ExecutePendingCommands
+    //
+    // On ARM Cortex-M, naturally-aligned loads/stores of ≤ 4 bytes are hardware-atomic
+    // (single bus transaction). These members are all ≤ 4 bytes and struct alignment guarantees
+    // natural alignment. The compiler cannot cache member reads across opaque function calls
+    // (k_work_submit_to_queue, S21Manager methods), so stale values are not a concern.
+    //
+    // This is technically a data race under the C++ memory model, but is a deliberate choice
+    // to avoid the overhead of atomics or mutexes on this specific platform.
     std::atomic<uint32_t> mPendingCommandFlags{0};
 
     enum CommandFlags : uint32_t {
