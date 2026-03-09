@@ -52,6 +52,7 @@ class AirConditionerManager {
     static void CommandWorkHandler(k_work* work);
     void PollSensors();
     void PollOperation();
+    uint8_t UpdateOperationLocalState(const S21Presentation::GetOperationResult& operationResult);
     void ExecutePendingCommands();
     static Clusters::Thermostat::SystemModeEnum OperatingModeToSystemMode(OperatingMode mode);
     static Clusters::Thermostat::ThermostatRunningModeEnum OperatingModeToRunningMode(OperatingMode mode);
@@ -69,6 +70,15 @@ class AirConditionerManager {
 
     enum CommandFlags : uint32_t {
         kCommandOperation = BIT(0), // OnOff, mode, setpoint, fan — sent as a single setOperation()
+    };
+
+    enum OperationChangedFlags : uint8_t {
+        kChangedOnOff       = BIT(0),
+        kChangedMode        = BIT(1),
+        kChangedRunningMode = BIT(2),
+        kChangedCooling     = BIT(3),
+        kChangedHeating     = BIT(4),
+        kChangedFanMode     = BIT(5),
     };
 
     int  mInitRetryIntervalMs{kS21InitRetryInitialIntervalMilliSec};

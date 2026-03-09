@@ -141,6 +141,46 @@ void AirConditionerManager::PollSensors()
     }
 }
 
+uint8_t AirConditionerManager::UpdateOperationLocalState(const S21Presentation::GetOperationResult& operationResult)
+{
+    auto [onOff, mode, setpoint, fanMode] = operationResult;
+    auto systemMode  = OperatingModeToSystemMode(mode);
+    auto runningMode = OperatingModeToRunningMode(mode);
+
+    uint8_t changed = 0;
+
+    if (onOff != mOnOff) {
+        mOnOff = onOff;
+        changed |= kChangedOnOff;
+    }
+    if (systemMode != mThermMode) {
+        mThermMode = systemMode;
+        changed |= kChangedMode;
+    }
+    if (runningMode != mRunningMode) {
+        mRunningMode = runningMode;
+        changed |= kChangedRunningMode;
+    }
+    if ((mode == OperatingMode::Cool || mode == OperatingMode::Auto_Cooling ||
+         mode == OperatingMode::Auto) &&
+        setpoint != mCoolingCelsiusSetPoint) {
+        mCoolingCelsiusSetPoint = setpoint;
+        changed |= kChangedCooling;
+    }
+    if ((mode == OperatingMode::Heat || mode == OperatingMode::Auto_Heating ||
+         mode == OperatingMode::Auto) &&
+        setpoint != mHeatingCelsiusSetPoint) {
+        mHeatingCelsiusSetPoint = setpoint;
+        changed |= kChangedHeating;
+    }
+    if (fanMode != mFanMode) {
+        mFanMode = fanMode;
+        changed |= kChangedFanMode;
+    }
+
+    return changed;
+}
+
 void AirConditionerManager::PollOperation()
 {
     auto op = mS21Manager->getOperation();
@@ -149,59 +189,31 @@ void AirConditionerManager::PollOperation()
         return;
     }
 
-    auto [onOff, mode, setpoint, fanMode] = *op;
-    bool fanModeChanged = (fanMode != mFanMode);
-    mFanMode = fanMode;
-
-    auto systemMode  = OperatingModeToSystemMode(mode);
-    auto runningMode = OperatingModeToRunningMode(mode);
-
     // Suppress Matter writes while an S21 command is pending: local state already reflects
     // the user's intent, and the command will update S21 (and thus the cache) shortly.
-    bool pendingOperation = mPendingCommandFlags.load() & kCommandOperation;
-    if (pendingOperation) {
+    if (mPendingCommandFlags.load() & kCommandOperation) {
         LOG_DBG("S21 operation pending, skipping attribute update");
         return;
     }
 
-    // Update local state if anything is out of sync with the received S21 state, to avoid AirConditionerManager::AttributeChangeHandler()
-    // unnecessarily scheduling AirConditionerManager::CommandWorkHandler to update S21 with the already-set values.
-    bool onOffChanged = (onOff != mOnOff);
-    mOnOff = onOff;
-
-    bool modeChanged = (systemMode != mThermMode);
-    mThermMode = systemMode;
-
-    bool runningModeChanged = (runningMode != mRunningMode);
-    mRunningMode = runningMode;
-
-    bool coolingChanged = (mode == OperatingMode::Cool || mode == OperatingMode::Auto_Cooling ||
-                           mode == OperatingMode::Auto) &&
-                          (setpoint != mCoolingCelsiusSetPoint);
-    if (coolingChanged) mCoolingCelsiusSetPoint = setpoint;
-
-    bool heatingChanged = (mode == OperatingMode::Heat || mode == OperatingMode::Auto_Heating ||
-                           mode == OperatingMode::Auto) &&
-                          (setpoint != mHeatingCelsiusSetPoint);
-    if (heatingChanged) mHeatingCelsiusSetPoint = setpoint;
-
-    if (!onOffChanged && !modeChanged && !runningModeChanged && !coolingChanged && !heatingChanged && !fanModeChanged) {
+    uint8_t changed = UpdateOperationLocalState(*op);
+    if (changed == 0) {
         LOG_DBG("S21 operation unchanged, not updating attributes (S21 setpoint %d, cooling setpoint %d, heating setpoint %d)",
-            setpoint, mCoolingCelsiusSetPoint, mHeatingCelsiusSetPoint);
+            std::get<2>(*op), mCoolingCelsiusSetPoint, mHeatingCelsiusSetPoint);
         return;
     }
 
-    Nrf::PostTask([onOff, systemMode, runningMode, onOffChanged, modeChanged, runningModeChanged,
-                   setpoint, coolingChanged, heatingChanged,
-                   fanMode, fanModeChanged] {
+    auto [onOff, mode, setpoint, fanMode] = *op;
+
+    Nrf::PostTask([onOff, mode, setpoint, fanMode, changed] {
         using namespace chip::app::Clusters::FanControl;
         PlatformMgr().LockChipStack();
-        if (onOffChanged)       OnOff::Attributes::OnOff::Set(kThermostatEndpoint, onOff);
-        if (modeChanged)        SystemMode::Set(kThermostatEndpoint, systemMode);
-        if (runningModeChanged) ThermostatRunningMode::Set(kThermostatEndpoint, runningMode);
-        if (coolingChanged)     OccupiedCoolingSetpoint::Set(kThermostatEndpoint, setpoint);
-        if (heatingChanged)     OccupiedHeatingSetpoint::Set(kThermostatEndpoint, setpoint);
-        if (fanModeChanged) {
+        if (changed & kChangedOnOff)       OnOff::Attributes::OnOff::Set(kThermostatEndpoint, onOff);
+        if (changed & kChangedMode)        SystemMode::Set(kThermostatEndpoint, OperatingModeToSystemMode(mode));
+        if (changed & kChangedRunningMode) ThermostatRunningMode::Set(kThermostatEndpoint, OperatingModeToRunningMode(mode));
+        if (changed & kChangedCooling)     OccupiedCoolingSetpoint::Set(kThermostatEndpoint, setpoint);
+        if (changed & kChangedHeating)     OccupiedHeatingSetpoint::Set(kThermostatEndpoint, setpoint);
+        if (changed & kChangedFanMode) {
             auto speedSetting = S21FanModeToSpeedSetting(fanMode);
             if (speedSetting.has_value()) {
                 Attributes::SpeedSetting::Set(kThermostatEndpoint, DataModel::MakeNullable(*speedSetting));
