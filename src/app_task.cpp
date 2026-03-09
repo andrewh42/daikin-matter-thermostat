@@ -16,6 +16,9 @@
 #include <app-common/zap-generated/attributes/Accessors.h>
 #include <setup_payload/OnboardingCodesUtil.h>
 
+#include <openthread/thread.h>
+#include <openthread.h>
+
 #include <zephyr/logging/log.h>
 
 LOG_MODULE_DECLARE(app, CONFIG_MATTER_LOG_LEVEL);
@@ -32,6 +35,28 @@ Nrf::Matter::IdentifyCluster sIdentifyThermostatCluster(kThermostatEndpointId);
 Nrf::Matter::IdentifyCluster sIdentifyHumiditySensorCluster(kHumiditySensorEndpointId);
 
 #define TEMPERATURE_BUTTON_MASK DK_BTN2_MSK
+
+constexpr uint32_t kThreadStatusIntervalMs = 30000;
+k_timer sThreadStatusTimer;
+
+void ThreadStatusTimerHandler()
+{
+    otInstance *instance = openthread_get_default_instance();
+    if (!instance) {
+        return;
+    }
+
+    int8_t avgRssi, lastRssi;
+
+    openthread_mutex_lock();
+    otError avgErr = otThreadGetParentAverageRssi(instance, &avgRssi);
+    otError lastErr = otThreadGetParentLastRssi(instance, &lastRssi);
+    openthread_mutex_unlock();
+
+    if (avgErr == OT_ERROR_NONE && lastErr == OT_ERROR_NONE) {
+        LOG_INF("Thread parent RSSI: avg=%d dBm, last=%d dBm", avgRssi, lastRssi);
+    }
+}
 
 } /* namespace */
 
@@ -79,6 +104,12 @@ CHIP_ERROR AppTask::Init()
 
     ReturnErrorOnFailure(sIdentifyThermostatCluster.Init());
     ReturnErrorOnFailure(sIdentifyHumiditySensorCluster.Init());
+
+    /* Start periodic Thread RSSI logging */
+    k_timer_init(&sThreadStatusTimer,
+        [](k_timer *) { Nrf::PostTask([] { ThreadStatusTimerHandler(); }); },
+        nullptr);
+    k_timer_start(&sThreadStatusTimer, K_MSEC(kThreadStatusIntervalMs), K_MSEC(kThreadStatusIntervalMs));
 
     return Nrf::Matter::StartServer();
 }
