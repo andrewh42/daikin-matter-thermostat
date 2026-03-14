@@ -41,10 +41,7 @@ target_sources(app PRIVATE
   src/s21/s21_presentation_sync_adapter.cpp
   src/s21/s21_shell.cpp
   src/s21/s21_stack.cpp
-  src/temp_sensor_manager.cpp
-  src/temperature_measurement/sensor.cpp
   src/zcl_callbacks.cpp
-  ${ZEPHYR_NRF_MODULE_DIR}/samples/matter/common/src/binding/binding_handler.cpp
 )
 
 ncs_configure_data_model()

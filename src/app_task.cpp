@@ -29,10 +29,8 @@ using namespace ::chip::DeviceLayer;
 
 namespace {
 constexpr EndpointId kThermostatEndpointId = 1;
-constexpr EndpointId kHumiditySensorEndpointId = 2;
 
 Nrf::Matter::IdentifyCluster sIdentifyThermostatCluster(kThermostatEndpointId);
-Nrf::Matter::IdentifyCluster sIdentifyHumiditySensorCluster(kHumiditySensorEndpointId);
 
 #define TEMPERATURE_BUTTON_MASK DK_BTN2_MSK
 
@@ -103,7 +101,6 @@ CHIP_ERROR AppTask::Init()
     ReturnErrorOnFailure(Nrf::Matter::RegisterEventHandler(Nrf::Board::DefaultMatterEventHandler, 0));
 
     ReturnErrorOnFailure(sIdentifyThermostatCluster.Init());
-    ReturnErrorOnFailure(sIdentifyHumiditySensorCluster.Init());
 
     /* Start periodic Thread RSSI logging */
     k_timer_init(&sThreadStatusTimer,
