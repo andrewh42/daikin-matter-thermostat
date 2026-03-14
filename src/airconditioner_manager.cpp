@@ -683,9 +683,13 @@ void AirConditionerManager::ExecutePendingCommands()
         int16_t setpoint;
 
         switch (mode) {
-        case OperatingMode::Auto_Cooling:
-        case OperatingMode::Auto_Heating:
         case OperatingMode::Auto:
+        case OperatingMode::Auto_Cooling:
+            setpoint = mCoolingSetPointCelsius - kDeadbandOffsetCelsius;
+            break;
+        case OperatingMode::Auto_Heating:
+            setpoint = mHeatingSetPointCelsius + kDeadbandOffsetCelsius;
+            break;
         case OperatingMode::Cool:
             setpoint = mCoolingSetPointCelsius;
             break;
@@ -696,8 +700,6 @@ void AirConditionerManager::ExecutePendingCommands()
             break;
         }
 
-        int16_t setpoint = (mode == OperatingMode::Heat || mode == OperatingMode::Auto_Heating)
-                           ? mHeatingSetPointCelsius : mCoolingSetPointCelsius;
         LOG_INF("Sending setOperation(onOff=%s, mode=%u, setpoint=%d, fan=%u) to S21",
                 mOnOff ? "true" : "false", static_cast<uint8_t>(mode), setpoint,
                 static_cast<uint8_t>(mFanMode));
