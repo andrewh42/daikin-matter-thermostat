@@ -2963,7 +2963,7 @@ endpoint 1 {
     ram      attribute maxHeatSetpointLimit default = 2800;
     ram      attribute minCoolSetpointLimit default = 1600;
     ram      attribute maxCoolSetpointLimit default = 3200;
-    ram      attribute minSetpointDeadBand default = 0;
+    ram      attribute minSetpointDeadBand default = 100;
     ram      attribute controlSequenceOfOperation default = 4;
     ram      attribute systemMode default = 0;
     ram      attribute thermostatRunningMode default = 0;

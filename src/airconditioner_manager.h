@@ -58,7 +58,7 @@ class AirConditionerManager {
     static const char* GetSystemModeStr(app::Clusters::Thermostat::SystemModeEnum mode);
     static const char* GetRunningModeStr(app::Clusters::Thermostat::ThermostatRunningModeEnum mode);
     static Clusters::Thermostat::SystemModeEnum OperatingModeToSystemMode(OperatingMode mode);
-    static Clusters::Thermostat::ThermostatRunningModeEnum OperatingModeToRunningMode(OperatingMode mode);
+    Clusters::Thermostat::ThermostatRunningModeEnum OperatingModeToRunningMode(OperatingMode mode, int16_t setpoint);
     static OperatingMode SystemModeToOperatingMode(Clusters::Thermostat::SystemModeEnum mode);
     static std::optional<FanMode> SpeedSettingToS21FanMode(uint8_t rawValue);
     static std::optional<uint8_t> S21FanModeToSpeedSetting(FanMode fanMode);
@@ -88,10 +88,10 @@ class AirConditionerManager {
 
     enum OperationChangedFlags : uint8_t {
         kChangedOnOff       = BIT(0),
-        kChangedMode        = BIT(1),
+        kChangedSystemMode        = BIT(1),
         kChangedRunningMode = BIT(2),
-        kChangedCooling     = BIT(3),
-        kChangedHeating     = BIT(4),
+        kChangedCoolingSetpoint     = BIT(3),
+        kChangedHeatingSetpoint     = BIT(4),
         kChangedFanMode     = BIT(5),
     };
 
@@ -100,8 +100,8 @@ class AirConditionerManager {
     DataModel::Nullable<int16_t>  mLocalTempCelsius;
     DataModel::Nullable<int16_t>  mOutdoorTempCelsius;
     DataModel::Nullable<uint16_t> mHumidity;
-    int16_t mCoolingCelsiusSetPoint{0};
-    int16_t mHeatingCelsiusSetPoint{0};
+    int16_t mCoolingSetPointCelsius{0};
+    int16_t mHeatingSetPointCelsius{0};
     Clusters::Thermostat::SystemModeEnum mSystemMode{Clusters::Thermostat::SystemModeEnum::kAuto};
     Clusters::Thermostat::ThermostatRunningModeEnum mRunningMode{Clusters::Thermostat::ThermostatRunningModeEnum::kOff};
     FanMode mFanMode{FanMode::Auto};
