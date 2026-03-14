@@ -21,12 +21,12 @@
 #pragma once
 
 /**** Cluster endpoint counts ****/
-#define MATTER_DM_IDENTIFY_CLUSTER_SERVER_ENDPOINT_COUNT                                             (2)
+#define MATTER_DM_IDENTIFY_CLUSTER_SERVER_ENDPOINT_COUNT                                             (1)
 #define MATTER_DM_GROUPS_CLUSTER_SERVER_ENDPOINT_COUNT                                               (1)
 #define MATTER_DM_ON_OFF_CLUSTER_SERVER_ENDPOINT_COUNT                                               (1)
 #define MATTER_DM_LEVEL_CONTROL_CLUSTER_SERVER_ENDPOINT_COUNT                                        (0)
 #define MATTER_DM_PWM_CLUSTER_SERVER_ENDPOINT_COUNT                                                  (0)
-#define MATTER_DM_DESCRIPTOR_CLUSTER_SERVER_ENDPOINT_COUNT                                           (3)
+#define MATTER_DM_DESCRIPTOR_CLUSTER_SERVER_ENDPOINT_COUNT                                           (2)
 #define MATTER_DM_BINDING_CLUSTER_SERVER_ENDPOINT_COUNT                                              (1)
 #define MATTER_DM_ACCESS_CONTROL_CLUSTER_SERVER_ENDPOINT_COUNT                                       (1)
 #define MATTER_DM_ACTIONS_CLUSTER_SERVER_ENDPOINT_COUNT                                              (0)
@@ -254,7 +254,7 @@
 #define MATTER_DM_COLOR_CONTROL_CLUSTER_CLIENT_ENDPOINT_COUNT                                        (0)
 #define MATTER_DM_BALLAST_CONFIGURATION_CLUSTER_CLIENT_ENDPOINT_COUNT                                (0)
 #define MATTER_DM_ILLUMINANCE_MEASUREMENT_CLUSTER_CLIENT_ENDPOINT_COUNT                              (0)
-#define MATTER_DM_TEMPERATURE_MEASUREMENT_CLUSTER_CLIENT_ENDPOINT_COUNT                              (1)
+#define MATTER_DM_TEMPERATURE_MEASUREMENT_CLUSTER_CLIENT_ENDPOINT_COUNT                              (0)
 #define MATTER_DM_PRESSURE_MEASUREMENT_CLUSTER_CLIENT_ENDPOINT_COUNT                                 (0)
 #define MATTER_DM_FLOW_MEASUREMENT_CLUSTER_CLIENT_ENDPOINT_COUNT                                     (0)
 #define MATTER_DM_RELATIVE_HUMIDITY_MEASUREMENT_CLUSTER_CLIENT_ENDPOINT_COUNT                        (0)
@@ -417,10 +417,6 @@
 #define MATTER_DM_PLUGIN_FAN_CONTROL_SERVER
 #define MATTER_DM_PLUGIN_FAN_CONTROL
 
-// Use this macro to check if the client side of the Temperature Measurement cluster is included
-#define ZCL_USING_TEMPERATURE_MEASUREMENT_CLUSTER_CLIENT
-#define MATTER_DM_PLUGIN_TEMPERATURE_MEASUREMENT_CLIENT
-
 // Use this macro to check if the server side of the Relative Humidity Measurement cluster is included
 #define ZCL_USING_RELATIVE_HUMIDITY_MEASUREMENT_CLUSTER_SERVER
 #define MATTER_DM_PLUGIN_RELATIVE_HUMIDITY_MEASUREMENT_SERVER
@@ -459,8 +455,7 @@
 #define GROUPS_ENABLE_ADD_GROUP_IF_IDENTIFYING_CMD 1
 
 //  Identify Cluster Commands
-#define IDENTIFY_ENABLE_IDENTIFY_CMD       1
-#define IDENTIFY_ENABLE_TRIGGER_EFFECT_CMD 1
+#define IDENTIFY_ENABLE_IDENTIFY_CMD 1
 
 //  NetworkCommissioning Cluster Commands
 #define NETWORK_COMMISSIONING_ENABLE_SCAN_NETWORKS_CMD                1

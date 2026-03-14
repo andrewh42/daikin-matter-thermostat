@@ -25,7 +25,6 @@ using namespace chip::app::Clusters::Thermostat::Attributes;
 using namespace Protocols::InteractionModel;
 
 constexpr EndpointId kThermostatEndpoint     = 1;
-constexpr EndpointId kHumiditySensorEndpoint = 2;
 
 K_THREAD_STACK_DEFINE(sS21WorkQueueStack, 2048);
 
@@ -162,7 +161,7 @@ void AirConditionerManager::PollSensors()
             PlatformMgr().LockChipStack();
             if (indoorVal)   SET_AND_LOG(LocalTemperature::Set(kThermostatEndpoint, *indoorVal));
             if (outdoorVal)  SET_AND_LOG(OutdoorTemperature::Set(kThermostatEndpoint, *outdoorVal));
-            if (humidityVal) SET_AND_LOG(MeasuredValue::Set(kHumiditySensorEndpoint, *humidityVal));
+            if (humidityVal) SET_AND_LOG(MeasuredValue::Set(kThermostatEndpoint, *humidityVal));
             PlatformMgr().UnlockChipStack();
         });
     } else {

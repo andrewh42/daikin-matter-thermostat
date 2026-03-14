@@ -2544,21 +2544,6 @@ cluster FanControl = 514 {
   command Step(StepRequest): DefaultSuccess = 0;
 }
 
-/** Attributes and commands for configuring the measurement of temperature, and reporting temperature measurements. */
-cluster TemperatureMeasurement = 1026 {
-  revision 4;
-
-  readonly attribute nullable temperature measuredValue = 0;
-  readonly attribute nullable temperature minMeasuredValue = 1;
-  readonly attribute nullable temperature maxMeasuredValue = 2;
-  readonly attribute optional int16u tolerance = 3;
-  readonly attribute command_id generatedCommandList[] = 65528;
-  readonly attribute command_id acceptedCommandList[] = 65529;
-  readonly attribute attrib_id attributeList[] = 65531;
-  readonly attribute bitmap32 featureMap = 65532;
-  readonly attribute int16u clusterRevision = 65533;
-}
-
 /** Attributes and commands for configuring the measurement of relative humidity, and reporting relative humidity measurements. */
 cluster RelativeHumidityMeasurement = 1029 {
   revision 3;
@@ -2897,7 +2882,6 @@ endpoint 1 {
   device type ma_room_airconditioner = 114, version 1;
 
   binding cluster Identify;
-  binding cluster TemperatureMeasurement;
 
   server cluster Identify {
     callback attribute identifyTime;
@@ -3009,35 +2993,6 @@ endpoint 1 {
     callback attribute attributeList;
     ram      attribute featureMap default = 0x07;
     ram      attribute clusterRevision default = 5;
-  }
-}
-endpoint 2 {
-  device type ma_humiditysensor = 775, version 1;
-
-
-  server cluster Identify {
-    callback attribute identifyTime;
-    callback attribute identifyType;
-    callback attribute generatedCommandList;
-    callback attribute acceptedCommandList;
-    callback attribute attributeList;
-    callback attribute featureMap;
-    callback attribute clusterRevision;
-
-    handle command Identify;
-    handle command TriggerEffect;
-  }
-
-  server cluster Descriptor {
-    callback attribute deviceTypeList;
-    callback attribute serverList;
-    callback attribute clientList;
-    callback attribute partsList;
-    callback attribute generatedCommandList;
-    callback attribute acceptedCommandList;
-    callback attribute attributeList;
-    callback attribute featureMap;
-    callback attribute clusterRevision;
   }
 
   server cluster RelativeHumidityMeasurement {
