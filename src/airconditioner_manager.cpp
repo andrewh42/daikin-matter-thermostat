@@ -24,10 +24,6 @@ using namespace chip::app::Clusters::RelativeHumidityMeasurement::Attributes;
 using namespace chip::app::Clusters::Thermostat::Attributes;
 using namespace Protocols::InteractionModel;
 
-constexpr EndpointId kThermostatEndpoint     = 1;
-
-constexpr int16_t kDeadbandOffsetCelsius = 50; // 0.5°C in the fixed-point format used by the thermostat cluster
-
 K_THREAD_STACK_DEFINE(sS21WorkQueueStack, 2048);
 
 namespace {
@@ -42,7 +38,6 @@ uint8_t ReturnCompleteValue(int16_t Value)
 /* Converts and returns only reminder part of value to printable type.
  * This formula rounds reminder value to one significant figure
  */
-
 uint8_t ReturnRemainderValue(int16_t Value)
 {
     return static_cast<uint8_t>((Value % 100 + 5) / 10);
@@ -58,6 +53,66 @@ uint8_t ReturnRemainderValue(int16_t Value)
 
 } /* namespace */
 
+// ─── ClusterMatterSink ────────────────────────────────────────────────────────
+
+void AirConditionerManager::ClusterMatterSink::setOnOff(bool v)
+{
+    SET_AND_LOG(OnOff::Attributes::OnOff::Set(mEndpointId, v));
+}
+
+void AirConditionerManager::ClusterMatterSink::setSystemMode(
+    chip::app::Clusters::Thermostat::SystemModeEnum m)
+{
+    SET_AND_LOG(SystemMode::Set(mEndpointId, m));
+}
+
+void AirConditionerManager::ClusterMatterSink::setRunningMode(
+    chip::app::Clusters::Thermostat::ThermostatRunningModeEnum m)
+{
+    SET_AND_LOG(ThermostatRunningMode::Set(mEndpointId, m));
+}
+
+void AirConditionerManager::ClusterMatterSink::setCoolingSetpoint(int16_t v)
+{
+    SET_AND_LOG(OccupiedCoolingSetpoint::Set(mEndpointId, v));
+}
+
+void AirConditionerManager::ClusterMatterSink::setHeatingSetpoint(int16_t v)
+{
+    SET_AND_LOG(OccupiedHeatingSetpoint::Set(mEndpointId, v));
+}
+
+void AirConditionerManager::ClusterMatterSink::setFanSpeedSetting(std::optional<uint8_t> s)
+{
+    using namespace chip::app::Clusters::FanControl;
+    if (s) {
+        SET_AND_LOG(Attributes::SpeedSetting::Set(mEndpointId, DataModel::MakeNullable(*s)));
+    } else {
+        // Auto: write FanMode=kAuto and let the cluster server set SpeedSetting to null.
+        // Writing null directly to SpeedSetting is rejected (InvalidInState) by the
+        // fan-control-server unless the write originates from cluster logic.
+        SET_AND_LOG(Attributes::FanMode::Set(mEndpointId, FanModeEnum::kAuto));
+        SET_AND_LOG(Attributes::SpeedCurrent::Set(mEndpointId, 3)); // indicate a mid-range speed while in auto mode
+    }
+}
+
+void AirConditionerManager::ClusterMatterSink::setLocalTemperature(int16_t v)
+{
+    SET_AND_LOG(LocalTemperature::Set(mEndpointId, v));
+}
+
+void AirConditionerManager::ClusterMatterSink::setOutdoorTemperature(int16_t v)
+{
+    SET_AND_LOG(OutdoorTemperature::Set(mEndpointId, v));
+}
+
+void AirConditionerManager::ClusterMatterSink::setHumidity(uint16_t v)
+{
+    SET_AND_LOG(MeasuredValue::Set(mEndpointId, v));
+}
+
+// ─── AirConditionerManager ────────────────────────────────────────────────────
+
 CHIP_ERROR AirConditionerManager::Init(S21Manager& s21Manager)
 {
     mS21Manager = &s21Manager;
@@ -68,10 +123,6 @@ CHIP_ERROR AirConditionerManager::Init(S21Manager& s21Manager)
 
     PlatformMgr().LockChipStack();
 
-    VerifyOrExit(Status::Success == LocalTemperature::Get(kThermostatEndpoint, mLocalTempCelsius),
-                 err = CHIP_IM_GLOBAL_STATUS(Failure));
-    VerifyOrExit(Status::Success == OutdoorTemperature::Get(kThermostatEndpoint, mOutdoorTempCelsius),
-                 err = CHIP_IM_GLOBAL_STATUS(Failure));
     VerifyOrExit(Status::Success == OccupiedCoolingSetpoint::Get(kThermostatEndpoint, &mCoolingSetPointCelsius),
                  err = CHIP_IM_GLOBAL_STATUS(Failure));
     VerifyOrExit(Status::Success == OccupiedHeatingSetpoint::Get(kThermostatEndpoint, &mHeatingSetPointCelsius),
@@ -131,189 +182,48 @@ void AirConditionerManager::PollWorkHandler(k_work* work)
     auto* dwork = k_work_delayable_from_work(work);
     auto& self  = *CONTAINER_OF(dwork, AirConditionerManager, mPollWork);
 
-    self.PollSensors();
-    self.PollOperation();
+    self.Poll();
 
     k_work_reschedule_for_queue(&self.mS21WorkQueue, &self.mPollWork, K_SECONDS(kS21PollIntervalSec));
 }
 
-void AirConditionerManager::PollSensors()
+void AirConditionerManager::Poll()
 {
+    if (mPendingCommandFlags.load() & kCommandOperation) {
+        LOG_DBG("S21 command pending, skipping poll");
+        return;
+    }
+
+    auto op       = mS21Manager->getOperation();
     auto indoor   = mS21Manager->getRoomTemperature();
     auto outdoor  = mS21Manager->getOutdoorTemperature();
     auto humidity = mS21Manager->getHumidity();
 
+    if (!op)       LOG_WRN("getOperation failed: %s",          op.error().message);
     if (!indoor)   LOG_WRN("getRoomTemperature failed: %s",    indoor.error().message);
     if (!outdoor)  LOG_INF("getOutdoorTemperature failed: %s", outdoor.error().message);
     if (!humidity) LOG_INF("getHumidity failed: %s",           humidity.error().message);
 
-    bool indoorChanged   = indoor   && (mLocalTempCelsius.IsNull()  || mLocalTempCelsius.Value()  != *indoor);
-    bool outdoorChanged  = outdoor  && (mOutdoorTempCelsius.IsNull() || mOutdoorTempCelsius.Value() != *outdoor);
-    bool humidityChanged = humidity && (mHumidity.IsNull()           || mHumidity.Value()           != *humidity * 100);
-
-    if (indoorChanged || outdoorChanged || humidityChanged) {
-        if (indoorChanged)   mLocalTempCelsius.SetNonNull(*indoor);
-        if (outdoorChanged)  mOutdoorTempCelsius.SetNonNull(*outdoor);
-        if (humidityChanged) mHumidity.SetNonNull(*humidity * 100);
-
-        std::optional<int16_t>  indoorVal    = indoorChanged   ? std::optional(*indoor)           : std::nullopt;
-        std::optional<int16_t>  outdoorVal   = outdoorChanged  ? std::optional(*outdoor)          : std::nullopt;
-        std::optional<uint16_t> humidityVal  = humidityChanged ? std::optional<uint16_t>(*humidity * 100) : std::nullopt;
-        Nrf::PostTask([indoorVal, outdoorVal, humidityVal] {
-            PlatformMgr().LockChipStack();
-            if (indoorVal)   SET_AND_LOG(LocalTemperature::Set(kThermostatEndpoint, *indoorVal));
-            if (outdoorVal)  SET_AND_LOG(OutdoorTemperature::Set(kThermostatEndpoint, *outdoorVal));
-            if (humidityVal) SET_AND_LOG(MeasuredValue::Set(kThermostatEndpoint, *humidityVal));
-            PlatformMgr().UnlockChipStack();
-        });
-    } else {
-        LOG_DBG("S21 sensors unchanged, not updating attributes");
-    }
-}
-
-uint8_t AirConditionerManager::UpdateOperationLocalState(const S21Presentation::GetOperationResult& operationResult)
-{
-    auto [onOff, mode, setpoint, fanMode] = operationResult;
-    auto systemMode  = OperatingModeToSystemMode(mode);
-    auto runningMode = OperatingModeToRunningMode(mode, setpoint);
-
-    uint8_t changed = 0;
-
-    if (onOff != mOnOff) {
-        LOG_DBG("On/Off changed from %d -> %d", mOnOff, onOff);
-        mOnOff = onOff;
-        changed |= kChangedOnOff;
-    }
-    if (systemMode != mSystemMode) {
-        LOG_DBG("Thermostat mode changed from %s -> %s", GetSystemModeStr(mSystemMode), GetSystemModeStr(systemMode));
-        mSystemMode = systemMode;
-        changed |= kChangedSystemMode;
-    }
-    if (runningMode != mRunningMode) {
-        LOG_DBG("Running mode changed from %s -> %s", GetRunningModeStr(mRunningMode), GetRunningModeStr(runningMode));
-        mRunningMode = runningMode;
-        changed |= kChangedRunningMode;
-    }
-
-    if (mode == OperatingMode::Cool && setpoint != mCoolingSetPointCelsius) {
-        LOG_DBG("Cooling setpoint changed from %d -> %d", mCoolingSetPointCelsius, setpoint);
-        mCoolingSetPointCelsius = setpoint;
-        changed |= kChangedCoolingSetpoint;
-    } else if ((mode == OperatingMode::Auto_Cooling || mode == OperatingMode::Auto) &&
-        setpoint + kDeadbandOffsetCelsius != mCoolingSetPointCelsius) {
-        LOG_DBG("Cooling setpoint changed from %d -> %d", mCoolingSetPointCelsius, setpoint + kDeadbandOffsetCelsius);
-        mCoolingSetPointCelsius = setpoint + kDeadbandOffsetCelsius;
-        changed |= kChangedCoolingSetpoint;
-    }
-
-    if (mode == OperatingMode::Heat && setpoint != mHeatingSetPointCelsius) {
-        LOG_DBG("Heating setpoint changed from %d -> %d", mHeatingSetPointCelsius, setpoint);
-        mHeatingSetPointCelsius = setpoint;
-        changed |= kChangedHeatingSetpoint;
-    } else if ((mode == OperatingMode::Auto_Heating || mode == OperatingMode::Auto) &&
-        setpoint - kDeadbandOffsetCelsius != mHeatingSetPointCelsius) {
-        LOG_DBG("Heating setpoint changed from %d -> %d", mHeatingSetPointCelsius, setpoint - kDeadbandOffsetCelsius);
-        mHeatingSetPointCelsius = setpoint - kDeadbandOffsetCelsius;
-        changed |= kChangedHeatingSetpoint;
-    }
-
-    if (fanMode != mFanMode) {
-        LOG_DBG("Fan mode changed from %d -> %d", static_cast<int>(mFanMode), static_cast<int>(fanMode));
-        mFanMode = fanMode;
-        changed |= kChangedFanMode;
-    }
-
-    return changed;
-}
-
-void AirConditionerManager::PollOperation()
-{
-    auto op = mS21Manager->getOperation();
-    if (!op) {
-        LOG_WRN("getOperation failed: %s", op.error().message);
-        return;
-    }
-
-    // Suppress Matter writes while an S21 command is pending: local state already reflects
-    // the user's intent, and the command will update S21 (and thus the cache) shortly.
-    if (mPendingCommandFlags.load() & kCommandOperation) {
-        LOG_DBG("S21 operation pending, skipping attribute update");
-        return;
-    }
-
-    uint8_t changed = UpdateOperationLocalState(*op);
-    if (changed == 0) {
-        LOG_DBG("S21 operation unchanged, not updating attributes (S21 setpoint %d, cooling setpoint %d, heating setpoint %d)",
-            std::get<2>(*op), mCoolingSetPointCelsius, mHeatingSetPointCelsius);
-        return;
-    }
+    if (!op || !indoor || !outdoor || !humidity) return;
 
     auto [onOff, mode, setpoint, fanMode] = *op;
-    auto systemMode  = OperatingModeToSystemMode(mode);
-    auto runningMode = OperatingModeToRunningMode(mode, setpoint);
+    S21State state{
+        .onOff                         = onOff,
+        .operatingMode                 = mode,
+        .setpointCelsius               = setpoint,
+        .fanMode                       = fanMode,
+        .indoorTemperatureCelsius      = *indoor,
+        .outdoorTemperatureCelsius     = *outdoor,
+        .indoorRelativeHumidityPercent = *humidity,
+    };
 
-    Nrf::PostTask([onOff, systemMode, runningMode, setpoint, fanMode, changed] {
-        using namespace chip::app::Clusters::FanControl;
+    Nrf::PostTask([this, state] {
         PlatformMgr().LockChipStack();
-        if (changed & kChangedOnOff)       SET_AND_LOG(OnOff::Attributes::OnOff::Set(kThermostatEndpoint, onOff));
-        if (changed & kChangedSystemMode)  SET_AND_LOG(SystemMode::Set(kThermostatEndpoint, systemMode));
-        if (changed & kChangedRunningMode) SET_AND_LOG(ThermostatRunningMode::Set(kThermostatEndpoint, runningMode));
-        if (changed & kChangedCoolingSetpoint)     SET_AND_LOG(OccupiedCoolingSetpoint::Set(kThermostatEndpoint, setpoint));
-        if (changed & kChangedHeatingSetpoint)     SET_AND_LOG(OccupiedHeatingSetpoint::Set(kThermostatEndpoint, setpoint));
-        if (changed & kChangedFanMode) {
-            auto speedSetting = S21FanModeToSpeedSetting(fanMode);
-            if (speedSetting.has_value()) {
-                SET_AND_LOG(Attributes::SpeedSetting::Set(kThermostatEndpoint, DataModel::MakeNullable(*speedSetting)));
-            } else {
-                // Auto: write FanMode=kAuto and let the cluster server set SpeedSetting to null.
-                // Writing null directly to SpeedSetting is rejected (InvalidInState) by the
-                // fan-control-server unless the write originates from cluster logic.
-                SET_AND_LOG(Attributes::FanMode::Set(kThermostatEndpoint, FanModeEnum::kAuto));
-                SET_AND_LOG(Attributes::SpeedCurrent::Set(kThermostatEndpoint, 3)); // indicate a mid-range speed while in auto mode. TODO: determine from S21 readin
-            }
-        }
+        mUpdatingFromPoll = true;
+        S21ToMatterTranslator(state, mMatterSink).translate();
+        mUpdatingFromPoll = false;
         PlatformMgr().UnlockChipStack();
     });
-}
-
-Clusters::Thermostat::SystemModeEnum AirConditionerManager::OperatingModeToSystemMode(OperatingMode mode)
-{
-    using SystemModeEnum = Clusters::Thermostat::SystemModeEnum;
-    switch (mode) {
-    case OperatingMode::Cool:         return SystemModeEnum::kCool;
-    case OperatingMode::Heat:         return SystemModeEnum::kHeat;
-    case OperatingMode::Dry:          return SystemModeEnum::kDry;
-    case OperatingMode::FanOnly:      return SystemModeEnum::kFanOnly;
-    case OperatingMode::Auto:
-    case OperatingMode::Auto_Cooling:
-    case OperatingMode::Auto_Heating: return SystemModeEnum::kAuto;
-    default:                          return SystemModeEnum::kAuto;
-    }
-}
-
-Clusters::Thermostat::ThermostatRunningModeEnum AirConditionerManager::OperatingModeToRunningMode(OperatingMode mode, int16_t setpoint)
-{
-    using RunningModeEnum = Clusters::Thermostat::ThermostatRunningModeEnum;
-
-    if (mLocalTempCelsius.IsNull()) {
-        return RunningModeEnum::kOff;
-    }
-    int16_t localTemp = mLocalTempCelsius.Value();
-
-    switch (mode) {
-    case OperatingMode::Auto_Cooling: return RunningModeEnum::kCool;
-    case OperatingMode::Auto_Heating: return RunningModeEnum::kHeat;
-    case OperatingMode::Cool:
-        return (setpoint >= localTemp + 50) ? RunningModeEnum::kOff : RunningModeEnum::kCool;
-    case OperatingMode::Heat:
-        return (setpoint <= localTemp - 50) ? RunningModeEnum::kOff : RunningModeEnum::kHeat;
-    case OperatingMode::Auto:
-        if (localTemp > setpoint + 50) return RunningModeEnum::kCool;
-        if (localTemp < setpoint - 50) return RunningModeEnum::kHeat;
-        return RunningModeEnum::kOff;
-    default:
-        return RunningModeEnum::kOff;
-    }
 }
 
 void AirConditionerManager::InitRetryWorkHandler(k_work* work)
@@ -396,15 +306,17 @@ void AirConditionerManager::LogThermostatStatus()
 {
     LOG_INF("Thermostat:");
     LOG_INF("	Mode - %s", GetSystemModeStr(mSystemMode));
-    if (!(GetLocalTemp().IsNull())) {
-        int16_t tempValue = GetLocalTemp().Value();
+    auto localTemp = GetLocalTemp();
+    if (!localTemp.IsNull()) {
+        int16_t tempValue = localTemp.Value();
         LOG_INF("	LocalTemperature - %d,%d'C", ReturnCompleteValue(tempValue), ReturnRemainderValue(tempValue));
     }
     else {
         LOG_INF("	LocalTemperature - No Value");
     }
-    if (!(GetOutdoorTemp().IsNull())) {
-        int16_t tempValue = GetOutdoorTemp().Value();
+    auto outdoorTemp = GetOutdoorTemp();
+    if (!outdoorTemp.IsNull()) {
+        int16_t tempValue = outdoorTemp.Value();
         LOG_INF("	OutdoorTemperature - %d,%d'C", ReturnCompleteValue(tempValue), ReturnRemainderValue(tempValue));
     }
     else {
@@ -547,8 +459,9 @@ void AirConditionerManager::OnOffAttributeChangeHandler(AttributeId attributeId,
         return;
     }
     mOnOff = newOnOff;
-    LOG_INF("Cluster OnOff: attribute OnOff set to %s", mOnOff ? "ON" : "OFF");
     UpdatePowerIndicator();
+    if (mUpdatingFromPoll) return;
+    LOG_INF("Cluster OnOff: attribute OnOff set to %s", mOnOff ? "ON" : "OFF");
     mPendingCommandFlags.fetch_or(kCommandOperation);
     k_work_submit_to_queue(&mS21WorkQueue, &mCommandWork);
 }
@@ -558,17 +471,19 @@ void AirConditionerManager::TemperatureAttributeChangeHandler(AttributeId attrib
     switch (attributeId) {
     case LocalTemperature::Id:
     case OutdoorTemperature::Id:
-        break; // updated by PollWorkHandler on the S21 work queue thread
+        break; // updated by Poll() via ClusterMatterSink
 
     case OccupiedCoolingSetpoint::Id: {
         auto coolingSetpoint = *reinterpret_cast<int16_t*>(value);
         if (mCoolingSetPointCelsius != coolingSetpoint) {
-            LOG_INF("Cooling TEMP %d -> %d", mCoolingSetPointCelsius, coolingSetpoint);
             mCoolingSetPointCelsius = coolingSetpoint;
-            if (mSystemMode == app::Clusters::Thermostat::SystemModeEnum::kCool ||
-                mSystemMode == app::Clusters::Thermostat::SystemModeEnum::kAuto) {
-                mPendingCommandFlags.fetch_or(kCommandOperation);
-                k_work_submit_to_queue(&mS21WorkQueue, &mCommandWork);
+            if (!mUpdatingFromPoll) {
+                LOG_INF("Cooling TEMP -> %d", coolingSetpoint);
+                if (mSystemMode == app::Clusters::Thermostat::SystemModeEnum::kCool ||
+                    mSystemMode == app::Clusters::Thermostat::SystemModeEnum::kAuto) {
+                    mPendingCommandFlags.fetch_or(kCommandOperation);
+                    k_work_submit_to_queue(&mS21WorkQueue, &mCommandWork);
+                }
             }
         }
         else {
@@ -579,12 +494,14 @@ void AirConditionerManager::TemperatureAttributeChangeHandler(AttributeId attrib
     case OccupiedHeatingSetpoint::Id: {
         auto heatingSetpoint = *reinterpret_cast<int16_t*>(value);
         if (mHeatingSetPointCelsius != heatingSetpoint) {
-            LOG_INF("Heating TEMP %d -> %d", mHeatingSetPointCelsius, heatingSetpoint);
             mHeatingSetPointCelsius = heatingSetpoint;
-            if (mSystemMode == app::Clusters::Thermostat::SystemModeEnum::kHeat ||
-                mSystemMode == app::Clusters::Thermostat::SystemModeEnum::kAuto) {
-                mPendingCommandFlags.fetch_or(kCommandOperation);
-                k_work_submit_to_queue(&mS21WorkQueue, &mCommandWork);
+            if (!mUpdatingFromPoll) {
+                LOG_INF("Heating TEMP -> %d", heatingSetpoint);
+                if (mSystemMode == app::Clusters::Thermostat::SystemModeEnum::kHeat ||
+                    mSystemMode == app::Clusters::Thermostat::SystemModeEnum::kAuto) {
+                    mPendingCommandFlags.fetch_or(kCommandOperation);
+                    k_work_submit_to_queue(&mS21WorkQueue, &mCommandWork);
+                }
             }
         }
         else {
@@ -595,11 +512,13 @@ void AirConditionerManager::TemperatureAttributeChangeHandler(AttributeId attrib
     case SystemMode::Id: {
         auto systemMode = static_cast<app::Clusters::Thermostat::SystemModeEnum>(*value);
         if (mSystemMode != systemMode) {
-            LOG_INF("System Mode changed %s -> %s", GetSystemModeStr(mSystemMode), GetSystemModeStr(systemMode));
             mSystemMode = systemMode;
-            if (systemMode != app::Clusters::Thermostat::SystemModeEnum::kOff) {
-                mPendingCommandFlags.fetch_or(kCommandOperation);
-                k_work_submit_to_queue(&mS21WorkQueue, &mCommandWork);
+            if (!mUpdatingFromPoll) {
+                LOG_INF("System Mode changed -> %s", GetSystemModeStr(systemMode));
+                if (systemMode != app::Clusters::Thermostat::SystemModeEnum::kOff) {
+                    mPendingCommandFlags.fetch_or(kCommandOperation);
+                    k_work_submit_to_queue(&mS21WorkQueue, &mCommandWork);
+                }
             }
         }
         else {
@@ -631,10 +550,12 @@ void AirConditionerManager::FanControlAttributeChangeHandler(AttributeId attribu
         if (mapped) {
             auto fanMode = *mapped;
             if (fanMode != mFanMode) {
-                LOG_DBG("FanMode %u -> %u", static_cast<uint8_t>(mFanMode), static_cast<uint8_t>(fanMode));
                 mFanMode = fanMode;
-                mPendingCommandFlags.fetch_or(kCommandOperation);
-                k_work_submit_to_queue(&mS21WorkQueue, &mCommandWork);
+                if (!mUpdatingFromPoll) {
+                    LOG_DBG("FanMode %u -> %u", static_cast<uint8_t>(mFanMode), static_cast<uint8_t>(fanMode));
+                    mPendingCommandFlags.fetch_or(kCommandOperation);
+                    k_work_submit_to_queue(&mS21WorkQueue, &mCommandWork);
+                }
             }
             else {
                 LOG_DBG("FanMode: %u (unchanged)", static_cast<uint8_t>(fanMode));
@@ -646,10 +567,12 @@ void AirConditionerManager::FanControlAttributeChangeHandler(AttributeId attribu
         auto fanModeEnum = static_cast<FanModeEnum>(*value);
         if (fanModeEnum == FanModeEnum::kAuto || fanModeEnum == FanModeEnum::kSmart) {
             if (mFanMode != ::FanMode::Auto) {
-                LOG_DBG("FanMode %u -> Auto", static_cast<uint8_t>(mFanMode));
                 mFanMode = ::FanMode::Auto;
-                mPendingCommandFlags.fetch_or(kCommandOperation);
-                k_work_submit_to_queue(&mS21WorkQueue, &mCommandWork);
+                if (!mUpdatingFromPoll) {
+                    LOG_DBG("FanMode %u -> Auto", static_cast<uint8_t>(mFanMode));
+                    mPendingCommandFlags.fetch_or(kCommandOperation);
+                    k_work_submit_to_queue(&mS21WorkQueue, &mCommandWork);
+                }
             }
             else {
                 LOG_DBG("FanMode: Auto (unchanged)");
@@ -742,22 +665,6 @@ std::optional<::FanMode> AirConditionerManager::SpeedSettingToS21FanMode(uint8_t
     }
 }
 
-std::optional<uint8_t> AirConditionerManager::S21FanModeToSpeedSetting(::FanMode fanMode)
-{
-    switch (fanMode) {
-    case ::FanMode::Auto:    return std::nullopt;
-    case ::FanMode::Quiet:   return 1;
-    case ::FanMode::Low:     return 2;
-    case ::FanMode::MidLow:  return 3;
-    case ::FanMode::Medium:  return 4;
-    case ::FanMode::MidHigh: return 5;
-    case ::FanMode::High:    return 6;
-    default:
-        LOG_WRN("S21 FanMode %u unrecognised, defaulting to Auto", static_cast<uint8_t>(fanMode));
-        return std::nullopt;
-    }
-}
-
 void AirConditionerManager::UpdatePowerIndicator()
 {
     gpio_pin_set_dt(&led0, mOnOff);
@@ -765,10 +672,18 @@ void AirConditionerManager::UpdatePowerIndicator()
 
 app::DataModel::Nullable<int16_t> AirConditionerManager::GetLocalTemp()
 {
-    return mLocalTempCelsius;
+    DataModel::Nullable<int16_t> v;
+    PlatformMgr().LockChipStack();
+    LocalTemperature::Get(kThermostatEndpoint, v);
+    PlatformMgr().UnlockChipStack();
+    return v;
 }
 
 app::DataModel::Nullable<int16_t> AirConditionerManager::GetOutdoorTemp()
 {
-    return mOutdoorTempCelsius;
+    DataModel::Nullable<int16_t> v;
+    PlatformMgr().LockChipStack();
+    OutdoorTemperature::Get(kThermostatEndpoint, v);
+    PlatformMgr().UnlockChipStack();
+    return v;
 }

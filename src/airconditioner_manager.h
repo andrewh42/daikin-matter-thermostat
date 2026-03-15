@@ -6,6 +6,7 @@
 #pragma once
 
 #include "s21/s21_manager.h"
+#include "s21_to_matter_translator.h"
 
 #include <stdbool.h>
 #include <stdint.h>
@@ -39,6 +40,26 @@ class AirConditionerManager {
     void LogMatterThermostatStatus();
 
   private:
+    // ClusterMatterSink: concrete MatterSink that writes to ZCL cluster attributes.
+    // Defined and implemented in airconditioner_manager.cpp.
+    class ClusterMatterSink : public MatterSink {
+    public:
+        explicit ClusterMatterSink(chip::EndpointId ep) : mEndpointId(ep) {}
+        void setOnOff(bool v) override;
+        void setSystemMode(chip::app::Clusters::Thermostat::SystemModeEnum m) override;
+        void setRunningMode(chip::app::Clusters::Thermostat::ThermostatRunningModeEnum m) override;
+        void setCoolingSetpoint(int16_t v) override;
+        void setHeatingSetpoint(int16_t v) override;
+        void setFanSpeedSetting(std::optional<uint8_t> s) override;
+        void setLocalTemperature(int16_t v) override;
+        void setOutdoorTemperature(int16_t v) override;
+        void setHumidity(uint16_t v) override;
+    private:
+        chip::EndpointId mEndpointId;
+    };
+
+    static constexpr chip::EndpointId kThermostatEndpoint = 1;
+
     S21Manager* mS21Manager{nullptr};
     struct k_work_q         mS21WorkQueue;
     struct k_work_delayable mPollWork;
@@ -51,27 +72,21 @@ class AirConditionerManager {
     static void PollWorkHandler(k_work* work);
     static void InitRetryWorkHandler(k_work* work);
     static void CommandWorkHandler(k_work* work);
-    void PollSensors();
-    void PollOperation();
-    uint8_t UpdateOperationLocalState(const S21Presentation::GetOperationResult& operationResult);
+    void Poll();
     void ExecutePendingCommands();
     static const char* GetSystemModeStr(app::Clusters::Thermostat::SystemModeEnum mode);
     static const char* GetRunningModeStr(app::Clusters::Thermostat::ThermostatRunningModeEnum mode);
-    static Clusters::Thermostat::SystemModeEnum OperatingModeToSystemMode(OperatingMode mode);
-    Clusters::Thermostat::ThermostatRunningModeEnum OperatingModeToRunningMode(OperatingMode mode, int16_t setpoint);
     static OperatingMode SystemModeToOperatingMode(Clusters::Thermostat::SystemModeEnum mode);
     static std::optional<FanMode> SpeedSettingToS21FanMode(uint8_t rawValue);
-    static std::optional<uint8_t> S21FanModeToSpeedSetting(FanMode fanMode);
 
     // Thread safety model:
     //
     // mPendingCommandFlags is std::atomic and accessed from both threads via fetch_or/exchange.
     //
-    // All other mutable state (mOnOff, mSystemMode, mRunningMode, mCoolingCelsiusSetPoint,
-    // mHeatingCelsiusSetPoint, mFanMode, mLocalTempCelsius, mOutdoorTempCelsius, mHumidity)
-    // is accessed from two threads:
+    // All other mutable state (mOnOff, mSystemMode, mCoolingCelsiusSetPoint, mHeatingCelsiusSetPoint,
+    // mFanMode) is accessed from two threads:
     //   - Matter callback thread: writes in AttributeChangeHandler and sub-handlers
-    //   - S21 work queue thread: reads/writes in PollOperation, PollSensors, ExecutePendingCommands
+    //   - S21 work queue thread: reads in ExecutePendingCommands
     //
     // On ARM Cortex-M, naturally-aligned loads/stores of ≤ 4 bytes are hardware-atomic
     // (single bus transaction). These members are all ≤ 4 bytes and struct alignment guarantees
@@ -80,31 +95,26 @@ class AirConditionerManager {
     //
     // This is technically a data race under the C++ memory model, but is a deliberate choice
     // to avoid the overhead of atomics or mutexes on this specific platform.
+    //
+    // mUpdatingFromPoll is set on the Matter thread only (PostTask lambda); no concurrent access.
     std::atomic<uint32_t> mPendingCommandFlags{0};
 
     enum CommandFlags : uint32_t {
         kCommandOperation = BIT(0), // OnOff, mode, setpoint, fan — sent as a single setOperation()
     };
 
-    enum OperationChangedFlags : uint8_t {
-        kChangedOnOff       = BIT(0),
-        kChangedSystemMode        = BIT(1),
-        kChangedRunningMode = BIT(2),
-        kChangedCoolingSetpoint     = BIT(3),
-        kChangedHeatingSetpoint     = BIT(4),
-        kChangedFanMode     = BIT(5),
-    };
-
     int  mInitRetryIntervalMs{kS21InitRetryInitialIntervalMilliSec};
     bool mOnOff{false};
-    DataModel::Nullable<int16_t>  mLocalTempCelsius;
-    DataModel::Nullable<int16_t>  mOutdoorTempCelsius;
-    DataModel::Nullable<uint16_t> mHumidity;
     int16_t mCoolingSetPointCelsius{0};
     int16_t mHeatingSetPointCelsius{0};
     Clusters::Thermostat::SystemModeEnum mSystemMode{Clusters::Thermostat::SystemModeEnum::kAuto};
-    Clusters::Thermostat::ThermostatRunningModeEnum mRunningMode{Clusters::Thermostat::ThermostatRunningModeEnum::kOff};
     FanMode mFanMode{FanMode::Auto};
+
+    // Set true while a poll-driven translate() call is in progress to suppress spurious
+    // command queuing from ZCL attribute-change callbacks. Accessed only on the Matter thread.
+    bool mUpdatingFromPoll{false};
+
+    ClusterMatterSink mMatterSink{kThermostatEndpoint};
 
     void OnOffAttributeChangeHandler(AttributeId attributeId, uint8_t* value, uint16_t size);
     void TemperatureAttributeChangeHandler(AttributeId attributeId, uint8_t* value, uint16_t size);

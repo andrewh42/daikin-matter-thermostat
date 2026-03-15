@@ -85,7 +85,7 @@ class S21Presentation {
     /// @param cb callback invoked with humidity percentage (0–100) on success, or an error.
     void getHumidity(GetHumidityCallback cb);
 
-    using GetCoarseTemperatureAndHumidityResult = std::tuple<int16_t, int16_t, uint8_t>; // indoor, outdoor (0.01 °C), humidity (%)
+    using GetCoarseTemperatureAndHumidityResult = std::tuple<int16_t, int16_t, uint8_t>; // indoor, outdoor (0.01 °C), indoor humidity (%)
     using GetCoarseTemperatureAndHumidityCallback = std::function<void(tl::expected<GetCoarseTemperatureAndHumidityResult, S21PresentationError>)>;
 
     using GetFanModeResult = FanMode;
