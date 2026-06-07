@@ -31,10 +31,6 @@
 	ranges = <0x0 0x20000000 0x40000>;
 };
 
-&uart20 {
-	/delete-property/ hw-flow-control; /* TODO: re-enable HWFC once it's fixed */
-};
-
 /* S21 UART — managed directly via nrfx (not the Zephyr serial driver).
  * Pin mux and baud rate are configured in S21DataLinkUart::init().
  * Keep status = "reserved" so DT macros (DT_ALIAS, DT_IRQ) still work. */
@@ -65,6 +61,16 @@
 
 &spi00 {
 	status = "disabled";
+};
+
+/* only present on the XIAO Sense variant */
+&lsm6ds3tr_c {
+        status = "disabled";
+};
+
+/* disable battery voltage monitoring (regulator-boot-off). change to regulator-boot-on if running on battery and monitoring voltage (ADC P1.14). */
+&vbat_pwr {
+        regulator-boot-off;
 };
 
 /* begin: from boards/nordic/nrf54l15dk/nrf54l_05_10_15_cpuapp_common.dtsi */
