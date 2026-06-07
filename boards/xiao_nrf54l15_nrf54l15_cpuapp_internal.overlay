@@ -63,10 +63,6 @@
 	status = "disabled";
 };
 
-&lsm6dso {
-	status = "disabled";
-};
-
 &spi00 {
 	status = "disabled";
 };

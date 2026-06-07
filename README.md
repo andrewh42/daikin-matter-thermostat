@@ -26,7 +26,7 @@ by the microcontroller. A [Sparkfun AP63203 breakout board](https://www.sparkfun
 ### Software requirements
 
 The software has been built and tested using the nRF Connect Visual Studio Code plugin with
-nRF Connect SDK v3.2.1.
+nRF Connect SDK v3.3.0.
 
 
 ## Building
@@ -48,7 +48,7 @@ Open this repo in Visual Studio Code and follow these steps:
     For the Seeed XIAO nRF54L15:
     ```sh
     west build -p -d build-xiao -b xiao_nrf54l15/nrf54l15/cpuapp -- \
-      -DCONFIG_CHIP_DFU_OVER_BT_SMP=y -DFILE_SUFFIX=internal \
+      -DFILE_SUFFIX=internal \
       -DEXTRA_CONF_FILE=prj_release.conf
     ```
 
