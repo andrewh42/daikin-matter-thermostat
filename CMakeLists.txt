@@ -33,6 +33,7 @@ target_include_directories(app PRIVATE
 target_sources(app PRIVATE
   src/airconditioner_manager.cpp
   src/s21_to_matter_translator.cpp
+  src/matter_to_s21_translator.cpp
   src/app_task.cpp
   src/main.cpp
   src/s21/s21_datalink_uart.cpp
