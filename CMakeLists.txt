@@ -26,6 +26,7 @@ ncs_get_zap_parent_dir(ZAP_PARENT_DIR)
 
 target_include_directories(app PRIVATE
   src
+  src/sync
   third_party
   ${ZAP_PARENT_DIR}
 )
@@ -44,6 +45,13 @@ target_sources(app PRIVATE
   src/s21/s21_shell.cpp
   src/s21/s21_stack.cpp
   src/zcl_callbacks.cpp
+  src/sync/projector.cpp
+  src/sync/reconciler.cpp
+  src/sync/atomic_buffer.cpp
+  src/sync/sync_stack.cpp
+  src/sync/aai_thermostat.cpp
+  src/sync/aai_onoff.cpp
+  src/sync/aai_fan_control.cpp
 )
 
 ncs_configure_data_model()

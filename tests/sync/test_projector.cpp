@@ -1,0 +1,209 @@
+/*
+ * SPDX-License-Identifier: LicenseRef-Apache-2.0
+ *
+ * Tests for sync::Projector. Cluster-side view of LogicalACState.
+ */
+
+#include <catch2/catch_test_macros.hpp>
+
+#include "projector.h"
+
+using namespace sync;
+
+using SystemModeEnum            = chip::app::Clusters::Thermostat::SystemModeEnum;
+using ThermostatRunningModeEnum = chip::app::Clusters::Thermostat::ThermostatRunningModeEnum;
+using SetpointChangeSourceEnum  = chip::app::Clusters::Thermostat::SetpointChangeSourceEnum;
+using FanModeEnum               = chip::app::Clusters::FanControl::FanModeEnum;
+
+namespace {
+
+LogicalACState stateAt(SystemModeEnum mode, int16_t heatSp, int16_t coolSp,
+                       int16_t autoSp, int16_t indoor = 2300, int16_t outdoor = 1500,
+                       uint8_t humidity = 50)
+{
+    LogicalACStateDefaults d;
+    d.mode         = mode;
+    d.heatSetpoint = heatSp;
+    d.coolSetpoint = coolSp;
+    d.autoSetpoint = autoSp;
+    d.indoorTemp   = indoor;
+    d.outdoorTemp  = outdoor;
+    d.humidity     = humidity;
+    return LogicalACState(d);
+}
+
+} // namespace
+
+// ─── Band projection ─────────────────────────────────────────────────────────
+
+TEST_CASE("Cool mode: cluster cool = observed cool, cluster heat = shadow heat",
+          "[phase3][projector]")
+{
+    Projector p;
+    auto s = stateAt(SystemModeEnum::kCool, 2000, 2400, 2200);
+
+    REQUIRE(p.projectedOccupiedCoolingSetpoint(s) == 2400);
+    REQUIRE(p.projectedOccupiedHeatingSetpoint(s) == 2000);
+}
+
+TEST_CASE("Heat mode: cluster heat = observed heat, cluster cool = shadow cool",
+          "[phase3][projector]")
+{
+    Projector p;
+    auto s = stateAt(SystemModeEnum::kHeat, 2000, 2400, 2200);
+
+    REQUIRE(p.projectedOccupiedHeatingSetpoint(s) == 2000);
+    REQUIRE(p.projectedOccupiedCoolingSetpoint(s) == 2400);
+}
+
+TEST_CASE("Auto mode synthesises band from autoSetpoint ± δ",
+          "[phase3][projector]")
+{
+    Projector p(ProjectorConfig{.autoBandHalfWidthCentiC = 50});
+    auto s = stateAt(SystemModeEnum::kAuto, 2000, 2400, 2200);
+
+    REQUIRE(p.projectedOccupiedHeatingSetpoint(s) == 2150);
+    REQUIRE(p.projectedOccupiedCoolingSetpoint(s) == 2250);
+}
+
+TEST_CASE("Auto-band width is configurable", "[phase3][projector]")
+{
+    Projector wide(ProjectorConfig{.autoBandHalfWidthCentiC = 100});
+    auto s = stateAt(SystemModeEnum::kAuto, 2000, 2400, 2200);
+
+    REQUIRE(wide.projectedOccupiedHeatingSetpoint(s) == 2100);
+    REQUIRE(wide.projectedOccupiedCoolingSetpoint(s) == 2300);
+}
+
+// ─── RunningMode derivation ──────────────────────────────────────────────────
+
+TEST_CASE("RunningMode: Off when system mode is Off", "[phase3][projector]")
+{
+    Projector p;
+    auto s = stateAt(SystemModeEnum::kOff, 2000, 2400, 2200);
+    REQUIRE(p.projectedRunningMode(s) == ThermostatRunningModeEnum::kOff);
+}
+
+TEST_CASE("RunningMode in Cool: kCool when indoor is above setpoint+hyst",
+          "[phase3][projector]")
+{
+    Projector p(ProjectorConfig{.runningModeHysteresisCentiC = 50});
+    // Indoor 2500, setpoint 2400 → 2400+50 = 2450 < 2500 → kCool
+    auto active = stateAt(SystemModeEnum::kCool, 2000, 2400, 2200, /*indoor=*/2500);
+    REQUIRE(p.projectedRunningMode(active) == ThermostatRunningModeEnum::kCool);
+
+    // Indoor 2400, setpoint 2400 → 2400+50 = 2450 >= 2400 → kOff
+    auto idle = stateAt(SystemModeEnum::kCool, 2000, 2400, 2200, /*indoor=*/2400);
+    REQUIRE(p.projectedRunningMode(idle) == ThermostatRunningModeEnum::kOff);
+}
+
+TEST_CASE("RunningMode in Heat: kHeat when indoor is below setpoint-hyst",
+          "[phase3][projector]")
+{
+    Projector p(ProjectorConfig{.runningModeHysteresisCentiC = 50});
+    // Indoor 1900, setpoint 2000 → 2000-50 = 1950 > 1900 → kHeat
+    auto active = stateAt(SystemModeEnum::kHeat, 2000, 2400, 2200, /*indoor=*/1900);
+    REQUIRE(p.projectedRunningMode(active) == ThermostatRunningModeEnum::kHeat);
+
+    // Indoor 2000, setpoint 2000 → 2000-50 = 1950 <= 2000 → kOff
+    auto idle = stateAt(SystemModeEnum::kHeat, 2000, 2400, 2200, /*indoor=*/2000);
+    REQUIRE(p.projectedRunningMode(idle) == ThermostatRunningModeEnum::kOff);
+}
+
+TEST_CASE("RunningMode in Auto: derives kCool/kHeat/kOff from indoor vs auto target",
+          "[phase3][projector]")
+{
+    Projector p(ProjectorConfig{.runningModeHysteresisCentiC = 50});
+
+    auto cooling  = stateAt(SystemModeEnum::kAuto, 2000, 2400, 2200, /*indoor=*/2300);
+    auto heating  = stateAt(SystemModeEnum::kAuto, 2000, 2400, 2200, /*indoor=*/2100);
+    auto deadband = stateAt(SystemModeEnum::kAuto, 2000, 2400, 2200, /*indoor=*/2200);
+
+    REQUIRE(p.projectedRunningMode(cooling)  == ThermostatRunningModeEnum::kCool);
+    REQUIRE(p.projectedRunningMode(heating)  == ThermostatRunningModeEnum::kHeat);
+    REQUIRE(p.projectedRunningMode(deadband) == ThermostatRunningModeEnum::kOff);
+}
+
+// ─── FanControl projection ───────────────────────────────────────────────────
+
+TEST_CASE("FanControl: SpeedSetting nullopt ↔ FanMode kAuto with mid-range SpeedCurrent",
+          "[phase3][projector]")
+{
+    Projector p;
+    auto s = stateAt(SystemModeEnum::kCool, 2000, 2400, 2200);
+    // Default fan is std::nullopt → Auto.
+    REQUIRE_FALSE(p.projectedSpeedSetting(s).has_value());
+    REQUIRE(p.projectedFanMode(s)     == FanModeEnum::kAuto);
+    REQUIRE(p.projectedSpeedCurrent(s) == 3);
+}
+
+TEST_CASE("FanControl: SpeedSetting present → FanMode kOn, SpeedCurrent mirrors setting",
+          "[phase3][projector]")
+{
+    Projector p;
+    LogicalACStateDefaults d;
+    d.fan = FanLevel::MidHigh; // SpeedSetting=5 on the wire
+    LogicalACState s(d);
+
+    REQUIRE(p.projectedSpeedSetting(s).has_value());
+    REQUIRE(*p.projectedSpeedSetting(s) == FanLevel::MidHigh);
+    REQUIRE(p.projectedFanMode(s)       == FanModeEnum::kOn);
+    REQUIRE(p.projectedSpeedCurrent(s)  == 5);
+}
+
+// ─── LocalTemperature / OutdoorTemperature ───────────────────────────────────
+
+TEST_CASE("LocalTemperature: 0 → nullopt (no reading), otherwise passthrough",
+          "[phase3][projector]")
+{
+    Projector p;
+    auto s = stateAt(SystemModeEnum::kCool, 2000, 2400, 2200, /*indoor=*/0);
+    REQUIRE_FALSE(p.projectedLocalTemperature(s).has_value());
+
+    auto t = stateAt(SystemModeEnum::kCool, 2000, 2400, 2200, /*indoor=*/2350);
+    REQUIRE(p.projectedLocalTemperature(t).has_value());
+    REQUIRE(*p.projectedLocalTemperature(t) == 2350);
+}
+
+// ─── Diff ────────────────────────────────────────────────────────────────────
+
+TEST_CASE("diffProjections emits only the cluster attributes that changed",
+          "[phase3][projector][diff]")
+{
+    Projector p;
+    auto a = stateAt(SystemModeEnum::kCool, 2000, 2400, 2200, /*indoor=*/2300);
+    auto b = stateAt(SystemModeEnum::kCool, 2000, 2500, 2200, /*indoor=*/2300);
+
+    auto paths = diffProjections(p.project(a), p.project(b), /*endpoint=*/1);
+    REQUIRE(paths.size() == 1);
+    REQUIRE(paths[0].endpoint  == 1);
+    REQUIRE(paths[0].cluster   == chip::app::Clusters::Thermostat::Id);
+    REQUIRE(paths[0].attribute ==
+            chip::app::Clusters::Thermostat::Attributes::OccupiedCoolingSetpoint::Id);
+}
+
+TEST_CASE("diffProjections returns empty when projections are equal",
+          "[phase3][projector][diff]")
+{
+    Projector p;
+    auto s = stateAt(SystemModeEnum::kCool, 2000, 2400, 2200);
+    REQUIRE(diffProjections(p.project(s), p.project(s), /*endpoint=*/1).empty());
+}
+
+TEST_CASE("Auto-band mode flip yields heating/cooling/system-mode dirty attrs",
+          "[phase3][projector][diff]")
+{
+    Projector p;
+    auto cool = stateAt(SystemModeEnum::kCool, 2000, 2400, 2200);
+    auto auto_ = stateAt(SystemModeEnum::kAuto, 2000, 2400, 2200);
+
+    auto paths = diffProjections(p.project(cool), p.project(auto_), /*endpoint=*/1);
+    // SystemMode, OccupiedHeating, OccupiedCooling all differ.
+    auto contains = [&](chip::AttributeId a) {
+        for (auto& p : paths) if (p.attribute == a) return true;
+        return false;
+    };
+    REQUIRE(contains(chip::app::Clusters::Thermostat::Attributes::SystemMode::Id));
+    REQUIRE(contains(chip::app::Clusters::Thermostat::Attributes::OccupiedHeatingSetpoint::Id));
+    REQUIRE(contains(chip::app::Clusters::Thermostat::Attributes::OccupiedCoolingSetpoint::Id));
+}

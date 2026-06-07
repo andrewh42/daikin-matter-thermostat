@@ -8,6 +8,7 @@
 
 #include "airconditioner_manager.h"
 #include "s21/s21_stack.h"
+#include "sync/sync_stack.h"
 
 #include "app/matter_init.h"
 #include "app/task_executor.h"
@@ -84,7 +85,16 @@ CHIP_ERROR AppTask::Init()
 
     /* Initialize Matter stack */
     ReturnErrorOnFailure(Nrf::Matter::PrepareServer(Nrf::Matter::InitData{.mPostServerInitClbk = [] {
-        CHIP_ERROR err = AirConditionerManager::Instance().Init(S21Stack::Instance().GetManager());
+        // SyncStack must Init *after* the Matter Server has run plugin
+        // init callbacks (so the SDK's gThermostatAttrAccess is registered
+        // and we can unregister-then-replace it cleanly).
+        CHIP_ERROR err = sync::SyncStack::Instance().Init(/*endpoint=*/1);
+        if (err != CHIP_NO_ERROR) {
+            LOG_ERR("SyncStack Init fail: 0x%" PRIx32, err.AsInteger());
+            return err;
+        }
+        err = AirConditionerManager::Instance().Init(S21Stack::Instance().GetManager(),
+                                                     sync::SyncStack::Instance());
         if (err != CHIP_NO_ERROR) {
             LOG_ERR("AirConditionerManager Init fail");
         }

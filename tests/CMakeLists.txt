@@ -75,3 +75,29 @@ target_include_directories(matter_to_s21_translator_tests PRIVATE
 
 target_link_libraries(matter_to_s21_translator_tests PRIVATE Catch2::Catch2WithMain)
 catch_discover_tests(matter_to_s21_translator_tests)
+
+add_executable(sync_tests
+    sync/test_smoke.cpp
+    sync/test_twin_field.cpp
+    sync/test_logical_ac_state.cpp
+    sync/test_reconciler.cpp
+    sync/test_projector.cpp
+    sync/test_atomic_buffer.cpp
+    sync/test_integration.cpp
+    sync/test_threading.cpp
+    sync/test_reachable.cpp
+    ${SRC_DIR}/sync/projector.cpp
+    ${SRC_DIR}/sync/reconciler.cpp
+    ${SRC_DIR}/sync/atomic_buffer.cpp
+)
+
+target_include_directories(sync_tests PRIVATE
+    ${SRC_DIR}                                       # for s21_to_matter_translator.h etc.
+    ${SRC_DIR}/sync                                  # sync/ production headers
+    ${SRC_DIR}/s21                                   # OperatingMode / FanMode enums
+    ${CMAKE_SOURCE_DIR}/sync/chip_stubs              # stub chip:: types
+    ${CMAKE_SOURCE_DIR}/../third_party               # tl/expected.hpp
+)
+
+target_link_libraries(sync_tests PRIVATE Catch2::Catch2WithMain)
+catch_discover_tests(sync_tests)

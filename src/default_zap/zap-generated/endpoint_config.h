@@ -47,8 +47,8 @@
                                                                                                                        \
             /* Endpoint: 1, Cluster: Thermostat (server) */                                                            \
             {(uint16_t)0x10, (uint16_t)0x0, (uint16_t)0x3F},        /* HVACSystemTypeConfiguration */                  \
-            {(uint16_t)0x9C4, (uint16_t)-0x6AB3, (uint16_t)0x7FFF}, /* OccupiedCoolingSetpoint */                      \
-            {(uint16_t)0x7D0, (uint16_t)-0x6AB3, (uint16_t)0x7FFF}, /* OccupiedHeatingSetpoint */                      \
+            {(uint16_t)0x0, (uint16_t)-0x6AB3, (uint16_t)0x7FFF},   /* OccupiedCoolingSetpoint */                      \
+            {(uint16_t)0x0, (uint16_t)-0x6AB3, (uint16_t)0x7FFF},   /* OccupiedHeatingSetpoint */                      \
             {(uint16_t)0x5DC, (uint16_t)-0x6AB3, (uint16_t)0x7FFF}, /* MinHeatSetpointLimit */                         \
             {(uint16_t)0xAF0, (uint16_t)-0x6AB3, (uint16_t)0x7FFF}, /* MaxHeatSetpointLimit */                         \
             {(uint16_t)0x640, (uint16_t)-0x6AB3, (uint16_t)0x7FFF}, /* MinCoolSetpointLimit */                         \
@@ -490,7 +490,8 @@
              ZAP_ATTRIBUTE_MASK(READABLE)}, /* ClusterRevision */                                                      \
                                                                                                                        \
             /* Endpoint: 1, Cluster: On/Off (server) */                                                                \
-            {ZAP_EMPTY_DEFAULT(), 0x00000000, 1, ZAP_TYPE(BOOLEAN), ZAP_ATTRIBUTE_MASK(READABLE)},    /* OnOff */      \
+            {ZAP_EMPTY_DEFAULT(), 0x00000000, 1, ZAP_TYPE(BOOLEAN),                                                    \
+             ZAP_ATTRIBUTE_MASK(EXTERNAL_STORAGE) | ZAP_ATTRIBUTE_MASK(READABLE)},                    /* OnOff */      \
             {ZAP_SIMPLE_DEFAULT(2), 0x0000FFFC, 4, ZAP_TYPE(BITMAP32), ZAP_ATTRIBUTE_MASK(READABLE)}, /* FeatureMap */ \
             {ZAP_SIMPLE_DEFAULT(6), 0x0000FFFD, 2, ZAP_TYPE(INT16U),                                                   \
              ZAP_ATTRIBUTE_MASK(READABLE)}, /* ClusterRevision */                                                      \
@@ -520,9 +521,11 @@
                                                                                                                        \
             /* Endpoint: 1, Cluster: Thermostat (server) */                                                            \
             {ZAP_EMPTY_DEFAULT(), 0x00000000, 2, ZAP_TYPE(TEMPERATURE),                                                \
-             ZAP_ATTRIBUTE_MASK(READABLE) | ZAP_ATTRIBUTE_MASK(NULLABLE)}, /* LocalTemperature */                      \
-            {ZAP_SIMPLE_DEFAULT(0x8000), 0x00000001, 2, ZAP_TYPE(TEMPERATURE),                                         \
-             ZAP_ATTRIBUTE_MASK(READABLE) | ZAP_ATTRIBUTE_MASK(NULLABLE)}, /* OutdoorTemperature */                    \
+             ZAP_ATTRIBUTE_MASK(EXTERNAL_STORAGE) | ZAP_ATTRIBUTE_MASK(READABLE) |                                     \
+                     ZAP_ATTRIBUTE_MASK(NULLABLE)}, /* LocalTemperature */                                             \
+            {ZAP_EMPTY_DEFAULT(), 0x00000001, 2, ZAP_TYPE(TEMPERATURE),                                                \
+             ZAP_ATTRIBUTE_MASK(EXTERNAL_STORAGE) | ZAP_ATTRIBUTE_MASK(READABLE) |                                     \
+                     ZAP_ATTRIBUTE_MASK(NULLABLE)}, /* OutdoorTemperature */                                           \
             {ZAP_SIMPLE_DEFAULT(1000), 0x00000003, 2, ZAP_TYPE(TEMPERATURE),                                           \
              ZAP_ATTRIBUTE_MASK(READABLE)}, /* AbsMinHeatSetpointLimit */                                              \
             {ZAP_SIMPLE_DEFAULT(3000), 0x00000004, 2, ZAP_TYPE(TEMPERATURE),                                           \
@@ -535,10 +538,10 @@
              ZAP_ATTRIBUTE_MASK(MIN_MAX) | ZAP_ATTRIBUTE_MASK(WRITABLE) |                                              \
                      ZAP_ATTRIBUTE_MASK(READABLE)}, /* HVACSystemTypeConfiguration */                                  \
             {ZAP_MIN_MAX_DEFAULTS_INDEX(1), 0x00000011, 2, ZAP_TYPE(TEMPERATURE),                                      \
-             ZAP_ATTRIBUTE_MASK(MIN_MAX) | ZAP_ATTRIBUTE_MASK(WRITABLE) |                                              \
+             ZAP_ATTRIBUTE_MASK(MIN_MAX) | ZAP_ATTRIBUTE_MASK(EXTERNAL_STORAGE) | ZAP_ATTRIBUTE_MASK(WRITABLE) |       \
                      ZAP_ATTRIBUTE_MASK(READABLE)}, /* OccupiedCoolingSetpoint */                                      \
             {ZAP_MIN_MAX_DEFAULTS_INDEX(2), 0x00000012, 2, ZAP_TYPE(TEMPERATURE),                                      \
-             ZAP_ATTRIBUTE_MASK(MIN_MAX) | ZAP_ATTRIBUTE_MASK(WRITABLE) |                                              \
+             ZAP_ATTRIBUTE_MASK(MIN_MAX) | ZAP_ATTRIBUTE_MASK(EXTERNAL_STORAGE) | ZAP_ATTRIBUTE_MASK(WRITABLE) |       \
                      ZAP_ATTRIBUTE_MASK(READABLE)}, /* OccupiedHeatingSetpoint */                                      \
             {ZAP_MIN_MAX_DEFAULTS_INDEX(3), 0x00000015, 2, ZAP_TYPE(TEMPERATURE),                                      \
              ZAP_ATTRIBUTE_MASK(MIN_MAX) | ZAP_ATTRIBUTE_MASK(WRITABLE) |                                              \
@@ -559,10 +562,10 @@
              ZAP_ATTRIBUTE_MASK(MIN_MAX) | ZAP_ATTRIBUTE_MASK(WRITABLE) |                                              \
                      ZAP_ATTRIBUTE_MASK(READABLE)}, /* ControlSequenceOfOperation */                                   \
             {ZAP_MIN_MAX_DEFAULTS_INDEX(9), 0x0000001C, 1, ZAP_TYPE(ENUM8),                                            \
-             ZAP_ATTRIBUTE_MASK(MIN_MAX) | ZAP_ATTRIBUTE_MASK(WRITABLE) |                                              \
+             ZAP_ATTRIBUTE_MASK(MIN_MAX) | ZAP_ATTRIBUTE_MASK(EXTERNAL_STORAGE) | ZAP_ATTRIBUTE_MASK(WRITABLE) |       \
                      ZAP_ATTRIBUTE_MASK(READABLE)}, /* SystemMode */                                                   \
-            {ZAP_SIMPLE_DEFAULT(0), 0x0000001E, 1, ZAP_TYPE(ENUM8),                                                    \
-             ZAP_ATTRIBUTE_MASK(READABLE)}, /* ThermostatRunningMode */                                                \
+            {ZAP_EMPTY_DEFAULT(), 0x0000001E, 1, ZAP_TYPE(ENUM8),                                                      \
+             ZAP_ATTRIBUTE_MASK(EXTERNAL_STORAGE) | ZAP_ATTRIBUTE_MASK(READABLE)}, /* ThermostatRunningMode */         \
             {ZAP_MIN_MAX_DEFAULTS_INDEX(10), 0x00000040, 1, ZAP_TYPE(ENUM8),                                           \
              ZAP_ATTRIBUTE_MASK(MIN_MAX) | ZAP_ATTRIBUTE_MASK(WRITABLE) | ZAP_ATTRIBUTE_MASK(READABLE)}, /* ACType */  \
             {ZAP_SIMPLE_DEFAULT(0x8000), 0x00000046, 2, ZAP_TYPE(TEMPERATURE),                                         \
@@ -574,7 +577,8 @@
                                                                                                                        \
             /* Endpoint: 1, Cluster: Fan Control (server) */                                                           \
             {ZAP_MIN_MAX_DEFAULTS_INDEX(11), 0x00000000, 1, ZAP_TYPE(ENUM8),                                           \
-             ZAP_ATTRIBUTE_MASK(MIN_MAX) | ZAP_ATTRIBUTE_MASK(WRITABLE) | ZAP_ATTRIBUTE_MASK(READABLE)}, /* FanMode */ \
+             ZAP_ATTRIBUTE_MASK(MIN_MAX) | ZAP_ATTRIBUTE_MASK(EXTERNAL_STORAGE) | ZAP_ATTRIBUTE_MASK(WRITABLE) |       \
+                     ZAP_ATTRIBUTE_MASK(READABLE)}, /* FanMode */                                                      \
             {ZAP_SIMPLE_DEFAULT(2), 0x00000001, 1, ZAP_TYPE(ENUM8),                                                    \
              ZAP_ATTRIBUTE_MASK(READABLE)}, /* FanModeSequence */                                                      \
             {ZAP_MIN_MAX_DEFAULTS_INDEX(12), 0x00000002, 1, ZAP_TYPE(PERCENT),                                         \
@@ -584,9 +588,10 @@
              ZAP_ATTRIBUTE_MASK(READABLE)}, /* PercentCurrent */                                                       \
             {ZAP_SIMPLE_DEFAULT(6), 0x00000004, 1, ZAP_TYPE(INT8U), ZAP_ATTRIBUTE_MASK(READABLE)}, /* SpeedMax */      \
             {ZAP_MIN_MAX_DEFAULTS_INDEX(13), 0x00000005, 1, ZAP_TYPE(INT8U),                                           \
-             ZAP_ATTRIBUTE_MASK(MIN_MAX) | ZAP_ATTRIBUTE_MASK(WRITABLE) | ZAP_ATTRIBUTE_MASK(READABLE) |               \
-                     ZAP_ATTRIBUTE_MASK(NULLABLE)},                                                /* SpeedSetting */  \
-            {ZAP_SIMPLE_DEFAULT(0), 0x00000006, 1, ZAP_TYPE(INT8U), ZAP_ATTRIBUTE_MASK(READABLE)}, /* SpeedCurrent */  \
+             ZAP_ATTRIBUTE_MASK(MIN_MAX) | ZAP_ATTRIBUTE_MASK(EXTERNAL_STORAGE) | ZAP_ATTRIBUTE_MASK(WRITABLE) |       \
+                     ZAP_ATTRIBUTE_MASK(READABLE) | ZAP_ATTRIBUTE_MASK(NULLABLE)}, /* SpeedSetting */                  \
+            {ZAP_EMPTY_DEFAULT(), 0x00000006, 1, ZAP_TYPE(INT8U),                                                      \
+             ZAP_ATTRIBUTE_MASK(EXTERNAL_STORAGE) | ZAP_ATTRIBUTE_MASK(READABLE)}, /* SpeedCurrent */                  \
             {ZAP_SIMPLE_DEFAULT(0x03), 0x00000007, 1, ZAP_TYPE(BITMAP8),                                               \
              ZAP_ATTRIBUTE_MASK(READABLE)}, /* RockSupport */                                                          \
             {ZAP_MIN_MAX_DEFAULTS_INDEX(14), 0x00000008, 1, ZAP_TYPE(BITMAP8),                                         \
@@ -1010,7 +1015,7 @@
       .clusterId = 0x00000006, \
       .attributes = ZAP_ATTRIBUTE_INDEX(175), \
       .attributeCount = 3, \
-      .clusterSize = 7, \
+      .clusterSize = 6, \
       .mask = ZAP_CLUSTER_MASK(SERVER) | ZAP_CLUSTER_MASK(INIT_FUNCTION) | ZAP_CLUSTER_MASK(SHUTDOWN_FUNCTION), \
       .functions = chipFuncArrayOnOffServer, \
       .acceptedCommandList = ZAP_GENERATED_COMMANDS_INDEX( 75 ), \
@@ -1049,7 +1054,7 @@
       .clusterId = 0x00000201, \
       .attributes = ZAP_ATTRIBUTE_INDEX(187), \
       .attributeCount = 21, \
-      .clusterSize = 36, \
+      .clusterSize = 26, \
       .mask = ZAP_CLUSTER_MASK(SERVER) | ZAP_CLUSTER_MASK(INIT_FUNCTION) | ZAP_CLUSTER_MASK(ATTRIBUTE_CHANGED_FUNCTION) | ZAP_CLUSTER_MASK(SHUTDOWN_FUNCTION) | ZAP_CLUSTER_MASK(PRE_ATTRIBUTE_CHANGED_FUNCTION), \
       .functions = chipFuncArrayThermostatServer, \
       .acceptedCommandList = ZAP_GENERATED_COMMANDS_INDEX( 79 ), \
@@ -1062,7 +1067,7 @@
       .clusterId = 0x00000202, \
       .attributes = ZAP_ATTRIBUTE_INDEX(208), \
       .attributeCount = 11, \
-      .clusterSize = 15, \
+      .clusterSize = 12, \
       .mask = ZAP_CLUSTER_MASK(SERVER) | ZAP_CLUSTER_MASK(ATTRIBUTE_CHANGED_FUNCTION) | ZAP_CLUSTER_MASK(PRE_ATTRIBUTE_CHANGED_FUNCTION), \
       .functions = chipFuncArrayFanControlServer, \
       .acceptedCommandList = nullptr, \
@@ -1093,7 +1098,7 @@
 #define GENERATED_ENDPOINT_TYPES                                                                                       \
     {                                                                                                                  \
             {ZAP_CLUSTER_INDEX(0), 15, 23},                                                                            \
-            {ZAP_CLUSTER_INDEX(15), 9, 79},                                                                            \
+            {ZAP_CLUSTER_INDEX(15), 9, 65},                                                                            \
     }
 
 // Largest attribute size is needed for various buffers
@@ -1106,7 +1111,7 @@ static_assert(ATTRIBUTE_LARGEST <= CHIP_CONFIG_MAX_ATTRIBUTE_STORE_ELEMENT_SIZE,
 #define ATTRIBUTE_SINGLETONS_SIZE (0)
 
 // Total size of attribute storage
-#define ATTRIBUTE_MAX_SIZE (102)
+#define ATTRIBUTE_MAX_SIZE (88)
 
 // Number of fixed endpoints
 #define FIXED_ENDPOINT_COUNT (2)
