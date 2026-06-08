@@ -1,0 +1,5 @@
+{
+  "clangd.arguments": [
+    "--query-driver=/opt/nordic/ncs/toolchains/0c0f19d91c/opt/zephyr-sdk/arm-zephyr-eabi/bin/arm-zephyr-eabi-g++"
+  ]
+}

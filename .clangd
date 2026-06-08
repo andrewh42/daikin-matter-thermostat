@@ -1,21 +1,48 @@
 # clangd configuration for the daikin-matter-airconditioner project.
 #
-# Requires the main app to have been built at least once:
+# Requires the relevant builds to exist on disk. Set up:
 #   west build -p -d build-xiao -b xiao_nrf54l15/nrf54l15/cpuapp -- \
 #     -DCONFIG_CHIP_DFU_OVER_BT_SMP=y -DFILE_SUFFIX=internal
-#
-# For integration test coverage, also build:
+#   cmake -S tests -B build-tests && cmake --build build-tests
 #   west build -p -d build-s21-integration tests/integration/s21_datalink_uart \
 #     -b xiao_nrf54l15/nrf54l15/cpuapp -- -DFILE_SUFFIX=internal
+#
+# DB routing (clangd merges fragments in document order; later
+# CompilationDatabase wins for overlapping path matches):
+#   default                                  → build-xiao   (Zephyr cross)
+#   src/s21/**, src/sync/**, *_translator.cpp → build-tests  (host Catch2)
+#   tests/**                                 → build-tests  (host Catch2)
+#   tests/integration/**                     → build-s21-integration (Zephyr)
 
 CompileFlags:
   CompilationDatabase: build-xiao/daikin-matter-airconditioner
+  # GCC-only flags clang doesn't recognise; stripping them silences the
+  # "Unknown argument" diagnostic noise on Zephyr-only sources.
+  Remove:
+    - -mfp16-format*
+    - -fno-reorder-functions
+    - -fno-defer-pop
 
 ---
 
-# Integration tests use a separate build whose compile_commands.json
-# covers the test source files and the S21 library sources they pull in.
+# Platform-independent src/ files are also compiled natively by build-tests.
+# Routing them there gives clangd a real host libc++ and avoids cross-compile
+# header-resolution issues. Unit tests live in tests/ and use the same DB.
 If:
-  PathMatch: tests/.*
+  PathMatch:
+    - src/s21/.*
+    - src/sync/.*
+    - src/.*_translator\.cpp
+    - tests/.*
+CompileFlags:
+  CompilationDatabase: build-tests
+
+---
+
+# Integration tests are themselves Zephyr builds (ztest on target), so
+# they need the integration build's cross-compile DB. This fragment is
+# last so it wins for files that also match the broader tests/.* rule.
+If:
+  PathMatch: tests/integration/.*
 CompileFlags:
   CompilationDatabase: build-s21-integration/s21_datalink_uart
