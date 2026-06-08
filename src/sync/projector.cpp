@@ -16,6 +16,7 @@ namespace sync {
 namespace TAttrNs  = chip::app::Clusters::Thermostat::Attributes;
 namespace FCAttrNs = chip::app::Clusters::FanControl::Attributes;
 namespace OOAttrNs = chip::app::Clusters::OnOff::Attributes;
+namespace RHAttrNs = chip::app::Clusters::RelativeHumidityMeasurement::Attributes;
 
 namespace {
 
@@ -68,8 +69,17 @@ int16_t Projector::projectedOccupiedCoolingSetpoint(const LogicalACState& s) con
 
 ThermostatRunningModeEnum Projector::projectedRunningMode(const LogicalACState& s) const
 {
-    const int16_t indoor = s.indoorTemp.observed();
-    const int16_t hyst   = mConfig.runningModeHysteresisCentiC;
+    // Power off → no compressor activity, regardless of SystemMode.
+    if (!projectedValue(s.onOff)) return ThermostatRunningModeEnum::kOff;
+
+    const auto&   indoorOpt = s.indoorTemp.observed();
+    const int16_t hyst      = mConfig.runningModeHysteresisCentiC;
+
+    // Without a temperature reading the hysteresis is unknowable; report
+    // Off rather than guessing. (When mode is kOff the answer is kOff
+    // anyway, so this guard subsumes that case as well.)
+    if (!indoorOpt.has_value()) return ThermostatRunningModeEnum::kOff;
+    const int16_t indoor = *indoorOpt;
 
     switch (s.mode.observed()) {
     case SystemModeEnum::kOff:
@@ -99,16 +109,12 @@ ThermostatRunningModeEnum Projector::projectedRunningMode(const LogicalACState& 
 
 std::optional<int16_t> Projector::projectedLocalTemperature(const LogicalACState& s) const
 {
-    // The S21 protocol returns 0 when no sensor reading is available; map
-    // that to nullopt so Matter sees a Null attribute rather than 0.00 °C.
-    const auto v = s.indoorTemp.observed();
-    return v == 0 ? std::optional<int16_t>{} : std::optional<int16_t>{v};
+    return s.indoorTemp.observed();
 }
 
 std::optional<int16_t> Projector::projectedOutdoorTemperature(const LogicalACState& s) const
 {
-    const auto v = s.outdoorTemp.observed();
-    return v == 0 ? std::optional<int16_t>{} : std::optional<int16_t>{v};
+    return s.outdoorTemp.observed();
 }
 
 SetpointChangeSourceEnum Projector::projectedSetpointSource(const LogicalACState& s) const
@@ -145,9 +151,11 @@ uint8_t Projector::projectedSpeedCurrent(const LogicalACState& s) const
     return static_cast<uint8_t>(projectedValue(s.fan).value_or(FanLevel::MidLow));
 }
 
-uint16_t Projector::projectedHumidityCentiPercent(const LogicalACState& s) const
+std::optional<uint16_t> Projector::projectedHumidityCentiPercent(const LogicalACState& s) const
 {
-    return static_cast<uint16_t>(s.humidity.observed()) * 100;
+    const auto& v = s.humidity.observed();
+    if (!v.has_value()) return std::nullopt;
+    return static_cast<uint16_t>(*v) * 100;
 }
 
 bool Projector::projectedReachable(const LogicalACState& s) const
@@ -222,6 +230,10 @@ diffProjections(const ProjectedClusterState& before,
 
     if (before.speedCurrent            != after.speedCurrent)
         emit(chip::app::Clusters::FanControl::Id, FCAttrNs::SpeedCurrent::Id);
+
+    if (before.humidityCentiPercent    != after.humidityCentiPercent)
+        emit(chip::app::Clusters::RelativeHumidityMeasurement::Id,
+             RHAttrNs::MeasuredValue::Id);
 
     // Reachable lives in BridgedDeviceBasicInformation; the cluster is
     // added to ZAP in Phase 8. Until then the generated headers don't

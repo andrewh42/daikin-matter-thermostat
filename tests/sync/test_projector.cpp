@@ -22,6 +22,7 @@ LogicalACState stateAt(SystemModeEnum mode, int16_t heatSp, int16_t coolSp,
                        uint8_t humidity = 50)
 {
     LogicalACStateDefaults d;
+    d.onOff        = true;
     d.mode         = mode;
     d.heatSetpoint = heatSp;
     d.coolSetpoint = coolSp;
@@ -153,16 +154,78 @@ TEST_CASE("FanControl: SpeedSetting present → FanMode kOn, SpeedCurrent mirror
 
 // ─── LocalTemperature / OutdoorTemperature ───────────────────────────────────
 
-TEST_CASE("LocalTemperature: 0 → nullopt (no reading), otherwise passthrough",
+TEST_CASE("LocalTemperature: nullopt before any observation; observed value passes through (incl. 0)",
           "[phase3][projector]")
 {
     Projector p;
-    auto s = stateAt(SystemModeEnum::kCool, 2000, 2400, 2200, /*indoor=*/0);
-    REQUIRE_FALSE(p.projectedLocalTemperature(s).has_value());
+
+    // Default-constructed state has never been observed → nullopt.
+    LogicalACState fresh{LogicalACStateDefaults{}};
+    REQUIRE_FALSE(p.projectedLocalTemperature(fresh).has_value());
+
+    // A genuine 0.00 °C reading is reported as 0, not null.
+    auto z = stateAt(SystemModeEnum::kCool, 2000, 2400, 2200, /*indoor=*/0);
+    REQUIRE(p.projectedLocalTemperature(z).has_value());
+    REQUIRE(*p.projectedLocalTemperature(z) == 0);
 
     auto t = stateAt(SystemModeEnum::kCool, 2000, 2400, 2200, /*indoor=*/2350);
     REQUIRE(p.projectedLocalTemperature(t).has_value());
     REQUIRE(*p.projectedLocalTemperature(t) == 2350);
+}
+
+TEST_CASE("RunningMode: kOff when no indoor temperature observation",
+          "[phase3][projector]")
+{
+    Projector p;
+    LogicalACStateDefaults d;
+    d.onOff = true;
+    d.mode  = SystemModeEnum::kCool; // a mode that normally consults indoor
+    LogicalACState s(d);
+    REQUIRE(p.projectedRunningMode(s) == ThermostatRunningModeEnum::kOff);
+}
+
+TEST_CASE("RunningMode: kOff when device is powered off, regardless of mode",
+          "[phase3][projector]")
+{
+    Projector p(ProjectorConfig{.runningModeHysteresisCentiC = 50});
+    // Indoor 2500 vs cool setpoint 2400 would normally project kCool.
+    auto s = stateAt(SystemModeEnum::kCool, 2000, 2400, 2200, /*indoor=*/2500);
+    s.onOff.applyObservation(false, ObservationSource::Device);
+    REQUIRE(p.projectedRunningMode(s) == ThermostatRunningModeEnum::kOff);
+}
+
+TEST_CASE("RunningMode: tracks desired onOff while a write is in flight",
+          "[phase3][projector]")
+{
+    // Faithful-UI policy: with no in-flight, projection reflects desired;
+    // once promoted to in-flight it reverts to observed until the device
+    // acknowledges. Same as projectedOnOff. The RunningMode guard must
+    // follow that policy so OnOff and RunningMode never disagree.
+    Projector p(ProjectorConfig{.runningModeHysteresisCentiC = 50});
+    auto s = stateAt(SystemModeEnum::kCool, 2000, 2400, 2200, /*indoor=*/2500);
+
+    // Controller intent to power off: desired=false, observed still true.
+    s.onOff.setDesired(false);
+    REQUIRE(p.projectedRunningMode(s) == ThermostatRunningModeEnum::kOff);
+
+    // Once the write is in flight, we report what the device confirmed.
+    s.onOff.promoteDesiredToInFlight();
+    REQUIRE(p.projectedRunningMode(s) == ThermostatRunningModeEnum::kCool);
+}
+
+TEST_CASE("HumidityCentiPercent: nullopt before any observation; ×100 of observed % otherwise",
+          "[phase3][projector]")
+{
+    Projector p;
+
+    LogicalACState fresh{LogicalACStateDefaults{}};
+    REQUIRE_FALSE(p.projectedHumidityCentiPercent(fresh).has_value());
+
+    LogicalACStateDefaults d;
+    d.humidity = 50;
+    LogicalACState s(d);
+    REQUIRE(p.projectedHumidityCentiPercent(s).has_value());
+    REQUIRE(*p.projectedHumidityCentiPercent(s) == 5000);
 }
 
 // ─── Diff ────────────────────────────────────────────────────────────────────

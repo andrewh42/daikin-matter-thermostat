@@ -5,6 +5,7 @@
  */
 
 #include "airconditioner_manager.h"
+#include "sync/sync_reader.h"
 #include "sync/sync_stack.h"
 
 #include "app/task_executor.h"
@@ -68,7 +69,7 @@ CHIP_ERROR AirConditionerManager::Init(S21Manager& s21Manager, sync::SyncStack& 
 
     // Sync the LED to current OnOff (boot-time read via SyncStack which
     // returns the boot defaults until the first poll lands).
-    UpdatePowerIndicator(mSyncStack->ReadOnOff());
+    UpdatePowerIndicator(mSyncStack->Reader().ReadOnOff());
 
     LOG_DBG("AirConditionerManager initialised");
     return CHIP_NO_ERROR;
@@ -250,7 +251,7 @@ void AirConditionerManager::ReportDirtyAttributesHook(
         if (p.cluster   == chip::app::Clusters::OnOff::Id &&
             p.attribute == chip::app::Clusters::OnOff::Attributes::OnOff::Id) {
             auto& self = Instance();
-            self.UpdatePowerIndicator(self.mSyncStack->ReadOnOff());
+            self.UpdatePowerIndicator(self.mSyncStack->Reader().ReadOnOff());
             break;
         }
     }
@@ -260,12 +261,12 @@ void AirConditionerManager::ReportDirtyAttributesHook(
 
 chip::app::DataModel::Nullable<int16_t> AirConditionerManager::GetLocalTemp()
 {
-    return mSyncStack->ReadLocalTemperature();
+    return mSyncStack->Reader().ReadLocalTemperature();
 }
 
 chip::app::DataModel::Nullable<int16_t> AirConditionerManager::GetOutdoorTemp()
 {
-    return mSyncStack->ReadOutdoorTemperature();
+    return mSyncStack->Reader().ReadOutdoorTemperature();
 }
 
 // ─── Debug logging (Button 2) ────────────────────────────────────────────────
@@ -300,11 +301,11 @@ const char* AirConditionerManager::GetRunningModeStr(
 
 void AirConditionerManager::LogThermostatStatus()
 {
-    auto& s = *mSyncStack;
+    const auto& r = mSyncStack->Reader();
     LOG_INF("Thermostat (bridge view):");
-    LOG_INF("  Mode - %s",       GetSystemModeStr(s.ReadSystemMode()));
-    auto local = s.ReadLocalTemperature();
-    auto outdoor = s.ReadOutdoorTemperature();
+    LOG_INF("  Mode - %s",       GetSystemModeStr(r.ReadSystemMode()));
+    auto local = r.ReadLocalTemperature();
+    auto outdoor = r.ReadOutdoorTemperature();
     if (!local.IsNull())
         LOG_INF("  LocalTemperature   - %d,%d'C",
                 ReturnCompleteValue(local.Value()), ReturnRemainderValue(local.Value()));
@@ -315,8 +316,8 @@ void AirConditionerManager::LogThermostatStatus()
                 ReturnCompleteValue(outdoor.Value()), ReturnRemainderValue(outdoor.Value()));
     else
         LOG_INF("  OutdoorTemperature - No Value");
-    const int16_t heat = s.ReadOccupiedHeatingSetpoint();
-    const int16_t cool = s.ReadOccupiedCoolingSetpoint();
+    const int16_t heat = r.ReadOccupiedHeatingSetpoint();
+    const int16_t cool = r.ReadOccupiedCoolingSetpoint();
     LOG_INF("  HeatingSetpoint    - %d,%d'C",
             ReturnCompleteValue(heat), ReturnRemainderValue(heat));
     LOG_INF("  CoolingSetpoint    - %d,%d'C",

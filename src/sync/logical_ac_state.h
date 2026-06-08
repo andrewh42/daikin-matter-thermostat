@@ -68,9 +68,9 @@ struct LogicalACStateDefaults {
     int16_t        coolSetpoint  = 2500; ///< 0.01 °C
     int16_t        autoSetpoint  = 2200; ///< 0.01 °C — midpoint of Auto band
     FanSpeed       fan           = std::nullopt;
-    int16_t        indoorTemp    = 0;
-    int16_t        outdoorTemp   = 0;
-    uint8_t        humidity      = 0;
+    std::optional<int16_t> indoorTemp    = std::nullopt;
+    std::optional<int16_t> outdoorTemp   = std::nullopt;
+    std::optional<uint8_t> humidity      = std::nullopt;
     bool           reachable     = false;
 };
 
@@ -96,10 +96,10 @@ struct LogicalACState {
     TwinField<int16_t>        autoSetpoint;
     TwinField<FanSpeed>       fan;
 
-    TwinField<int16_t>        indoorTemp;
-    TwinField<int16_t>        outdoorTemp;
-    TwinField<uint8_t>        humidity;
-    TwinField<bool>           reachable;
+    TwinField<std::optional<int16_t>> indoorTemp;
+    TwinField<std::optional<int16_t>> outdoorTemp;
+    TwinField<std::optional<uint8_t>> humidity;
+    TwinField<bool>                   reachable;
 
     /// The setpoint twin currently in charge of the device's target T,
     /// given a system mode. Auto returns the auto-shadow; Cool/Heat return

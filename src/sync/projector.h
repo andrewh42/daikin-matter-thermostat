@@ -77,7 +77,7 @@ struct ProjectedClusterState {
     uint8_t                   speedCurrent;       // mid-range while Auto
 
     // RelativeHumidityMeasurement cluster
-    uint16_t                  humidityCentiPercent;
+    std::optional<uint16_t>   humidityCentiPercent; // nullopt → cluster reports null
 
     // BridgedDeviceBasicInformation
     bool                      reachable;
@@ -107,7 +107,7 @@ public:
     FanSpeed                      projectedSpeedSetting(const LogicalACState&) const;
     FanModeEnum                   projectedFanMode(const LogicalACState&) const;
     uint8_t                       projectedSpeedCurrent(const LogicalACState&) const;
-    uint16_t                      projectedHumidityCentiPercent(const LogicalACState&) const;
+    std::optional<uint16_t>       projectedHumidityCentiPercent(const LogicalACState&) const;
     bool                          projectedReachable(const LogicalACState&) const;
 
     const ProjectorConfig& config() const { return mConfig; }

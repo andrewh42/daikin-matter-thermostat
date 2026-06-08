@@ -3,6 +3,7 @@
  */
 #include "aai_fan_control.h"
 
+#include "sync_reader.h"
 #include "sync_stack.h"
 #include "write_intent.h"
 
@@ -19,13 +20,14 @@ using FanModeEnum = Clusters::FanControl::FanModeEnum;
 CHIP_ERROR FanControlBridgeAttributeAccess::Read(const ConcreteReadAttributePath& path,
                                                  AttributeValueEncoder& encoder)
 {
+    const auto& r = mStack->Reader();
     switch (path.mAttributeId) {
     case FCAttr::SpeedSetting::Id:
-        return encoder.Encode(mStack->ReadSpeedSetting());
+        return encoder.Encode(r.ReadSpeedSetting());
     case FCAttr::FanMode::Id:
-        return encoder.Encode(mStack->ReadFanMode());
+        return encoder.Encode(r.ReadFanMode());
     case FCAttr::SpeedCurrent::Id:
-        return encoder.Encode(mStack->ReadSpeedCurrent());
+        return encoder.Encode(r.ReadSpeedCurrent());
     default:
         return CHIP_NO_ERROR; // fallback to cluster server
     }

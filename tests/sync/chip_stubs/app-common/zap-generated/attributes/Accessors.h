@@ -122,6 +122,13 @@ namespace Attributes {
 }
 } // namespace FanControl
 
+namespace RelativeHumidityMeasurement {
+constexpr ClusterId Id = 0x0405;
+namespace Attributes {
+    namespace MeasuredValue { constexpr AttributeId Id = 0x0000; }
+}
+} // namespace RelativeHumidityMeasurement
+
 namespace BridgedDeviceBasicInformation {
 constexpr ClusterId Id = 0x0039;
 namespace Attributes {

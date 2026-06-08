@@ -23,10 +23,10 @@
 #include "monotonic_time_source.h"
 #include "projector.h"
 #include "reconciler.h"
+#include "sync_reader.h"
 #include "write_intent.h"
 
 #include <app-common/zap-generated/attributes/Accessors.h>
-#include <app/data-model/Nullable.h>
 #include <lib/core/CHIPError.h>
 
 #include <optional>
@@ -96,13 +96,12 @@ public:
     AppliedChange     CommitAtomic();
     AtomicTxn::Status RollbackAtomic();
 
-    // ─── Per-attribute projected reads (lock-acquiring) ──────────────────────
-    //
-    // The AAI Read paths call these to compose attribute encoder output.
-    // Each grabs the mutex internally; aggregated reads (e.g. multiple
-    // fields in one client request) cost N lock cycles, which is fine —
-    // the CHIP stack lock above is held by the caller anyway, so the only
-    // contention is with the S21 work queue.
+    // ─── Per-attribute projected reads ───────────────────────────────────────
+
+    /// The thread-safe read facade used by AAI Read paths. Lifetime is
+    /// tied to this SyncStack instance; the returned reference is invalid
+    /// after Shutdown().
+    const SyncReader& Reader() const { return *mReader; }
 
     /// Value-copy of the underlying twin state, taken under the internal
     /// lock. For debug surfaces (shell commands, logs) that want the raw
@@ -110,20 +109,6 @@ public:
     /// copy lets callers format outside the lock so shell I/O doesn't
     /// extend the mutex hold that ApplyObservation contends for.
     LogicalACState Snapshot() const;
-
-    bool                          ReadOnOff()                       const;
-    SystemModeEnum                ReadSystemMode()                  const;
-    int16_t                       ReadOccupiedHeatingSetpoint()     const;
-    int16_t                       ReadOccupiedCoolingSetpoint()     const;
-    ThermostatRunningModeEnum     ReadRunningMode()                 const;
-    chip::app::DataModel::Nullable<int16_t> ReadLocalTemperature()  const;
-    chip::app::DataModel::Nullable<int16_t> ReadOutdoorTemperature() const;
-    SetpointChangeSourceEnum      ReadSetpointChangeSource()        const;
-    chip::app::DataModel::Nullable<uint8_t> ReadSpeedSetting()      const;
-    FanModeEnum                   ReadFanMode()                     const;
-    uint8_t                       ReadSpeedCurrent()                const;
-    uint16_t                      ReadHumidityCentiPercent()        const;
-    bool                          ReadReachable()                   const;
 
     chip::EndpointId Endpoint() const { return mEndpoint; }
 
@@ -159,6 +144,10 @@ private:
     std::optional<MonotonicTimeSource> mTime;
     std::optional<Reconciler>          mReconciler;
     std::optional<AtomicTxn>           mAtomic;
+    // mReader holds references into mState and mReconciler. Declared last
+    // so destruction order tears it down before its referents; Shutdown()
+    // enforces the same order explicitly.
+    std::optional<SyncReader>          mReader;
 };
 
 } // namespace sync

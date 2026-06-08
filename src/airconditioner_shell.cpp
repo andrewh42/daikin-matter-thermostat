@@ -54,9 +54,21 @@ void fmtTemperature(char* buf, size_t n, int16_t v)
     snprintf(buf, n, "%s%d.%02dC", sign < 0 ? "-" : "", whole, frac);
 }
 
+void fmtTemperatureOpt(char* buf, size_t n, std::optional<int16_t> v)
+{
+    if (v) fmtTemperature(buf, n, *v);
+    else   snprintf(buf, n, "n/a");
+}
+
 void fmtHumidity(char* buf, size_t n, uint8_t v)
 {
     snprintf(buf, n, "%u%%", static_cast<unsigned>(v));
+}
+
+void fmtHumidityOpt(char* buf, size_t n, std::optional<uint8_t> v)
+{
+    if (v) fmtHumidity(buf, n, *v);
+    else   snprintf(buf, n, "n/a");
 }
 
 const char* systemModeStr(SystemModeEnum m)
@@ -141,9 +153,9 @@ int CmdStatus(const struct shell* sh, size_t /*argc*/, char** /*argv*/)
     printTwin(sh, "coolSetpoint", s.coolSetpoint, fmtTemperature);
     printTwin(sh, "autoSetpoint", s.autoSetpoint, fmtTemperature);
     printTwin(sh, "fan",          s.fan,          fmtFanSpeed);
-    printTwin(sh, "indoorTemp",   s.indoorTemp,   fmtTemperature);
-    printTwin(sh, "outdoorTemp",  s.outdoorTemp,  fmtTemperature);
-    printTwin(sh, "humidity",     s.humidity,     fmtHumidity);
+    printTwin(sh, "indoorTemp",   s.indoorTemp,   fmtTemperatureOpt);
+    printTwin(sh, "outdoorTemp",  s.outdoorTemp,  fmtTemperatureOpt);
+    printTwin(sh, "humidity",     s.humidity,     fmtHumidityOpt);
     printTwin(sh, "reachable",    s.reachable,    fmtBool);
     return 0;
 }
