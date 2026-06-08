@@ -55,7 +55,7 @@ CHIP_ERROR AirConditionerManager::Init(S21Manager& s21Manager, sync::SyncStack& 
 
     // Wire up SyncStack so AAI Writes and Polls schedule the right
     // follow-up work. Both hooks are static fns dispatching on Instance().
-    mSyncStack->SetCommandPumpHook(&AirConditionerManager::SchedulePumpHook);
+    mSyncStack->SetCommandPumpHook(&AirConditionerManager::ScheduleS21CommandHook);
     mSyncStack->SetDirtyReporterHook(&AirConditionerManager::ReportDirtyAttributesHook);
 
     if (mS21Manager->Init() == 0) {
@@ -172,7 +172,7 @@ void AirConditionerManager::InitRetryWorkHandler(k_work* work)
 
 // ─── Command pump (S21 work queue) ───────────────────────────────────────────
 
-void AirConditionerManager::SchedulePumpHook()
+void AirConditionerManager::ScheduleS21CommandHook()
 {
     auto& self = Instance();
     k_work_reschedule_for_queue(&self.mS21WorkQueue, &self.mCommandWork,

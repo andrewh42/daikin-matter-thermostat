@@ -57,17 +57,18 @@ class AirConditionerManager {
     AirConditionerManager() = default;
 
     static constexpr chip::EndpointId kThermostatEndpoint = 1;
-    static constexpr int kS21PollIntervalSec                  = 15;
+    static constexpr int kS21PollIntervalSec                  = 10;
     static constexpr int kS21InitRetryInitialIntervalMilliSec = 500;
     static constexpr int kS21InitRetryMaximumIntervalMilliSec = 60'000;
     static constexpr int kCommandDebounceMs                   = 50;
 
     /// Number of consecutive whole-poll failures (every getter erroring)
     /// before we flip the bridge's Reachable view to false. Three at the
-    /// 15 s poll interval gives a ~45 s window — long enough to absorb a
+    /// 10 s poll interval gives a ~30 s window — long enough to absorb a
     /// single transient bus glitch, short enough to surface a real outage
     /// before the controller's subscription timeout.
     static constexpr int kReachableFailureThreshold = 3;
+
     int mConsecutivePollFailures{0};
 
     S21Manager*             mS21Manager{nullptr};
@@ -86,7 +87,7 @@ class AirConditionerManager {
 
     /// SyncStack hook: queue mCommandWork on the S21 work queue with a
     /// short debounce so consecutive intents collapse into one D1.
-    static void SchedulePumpHook();
+    static void ScheduleS21CommandHook();
 
     /// SyncStack hook: forward dirty paths to the Matter event loop and
     /// fire MatterReportingAttributeChangeCallback for each.
