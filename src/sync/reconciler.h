@@ -3,13 +3,13 @@
  *
  * Reconciler
  * ----------
- * Central policy engine. Two entry points:
+ * Central policy engine. Three observation/intent entry points:
  *
- *   applyIntent(intent)        — controller (Matter) write arrived
- *   applyObservation(snapshot) — S21 poll completed
+ *   applyIntent(intent)                       — controller (Matter) write arrived
+ *   applyOperationalObservation(opSnapshot)   — every-poll S21 op snapshot
+ *   applyEnvironmentalObservation(envSnapshot) — slower-cadence sensor snapshot
  *
- * Both mutate LogicalACState through the TwinField algebra and return an
- * AppliedChange describing what changed:
+ * The first two mutate TwinFields and return an OperationalChange:
  *
  *   - dirtyAttributes: cluster attributes whose projected value differs
  *     after the call. Caller (Phase 7 pump) reports each to subscribers
@@ -18,6 +18,10 @@
  *   - sendCommand: the next S21 setOperation() to dispatch, or nullopt if
  *     nothing should be sent (no dirty desireds, in-flight pending, or
  *     command identical to the last one we sent).
+ *
+ * applyEnvironmentalObservation mutates only SensorFields and returns an
+ * EnvironmentalChange (dirty attributes only — there is no sendCommand
+ * because env observations cannot make pendingCommand answer differently).
  *
  * Decisions the reconciler makes:
  *
@@ -49,6 +53,7 @@
 #include "matter_attribute_path.h"
 #include "matter_to_s21_translator.h"
 #include "projector.h"
+#include "s21_observation.h"
 #include "time_source.h"
 #include "write_intent.h"
 
@@ -63,9 +68,22 @@ struct ReconcilerConfig {
     ProjectorConfig  projector{};                 ///< Shared with the AAI Read paths.
 };
 
-struct AppliedChange {
+/// Returned by every mutation path that can produce a setOperation()
+/// command — `applyIntent`, `applyAtomicBundle`, `applyOperationalObservation`,
+/// and `AtomicTxn::commit`. The presence of `sendCommand` reflects that
+/// these paths touch TwinFields that participate in `pendingCommand()`.
+struct OperationalChange {
     std::vector<MatterAttributePath>   dirtyAttributes;
     std::optional<S21OperationCommand> sendCommand;
+};
+
+/// Returned by `applyEnvironmentalObservation`. Environmental observations
+/// write only SensorFields, which don't participate in `pendingCommand()`,
+/// so there's no `sendCommand` slot — the absence is a static guarantee.
+/// Field name matches `OperationalChange::dirtyAttributes` so caller code
+/// reading either type stays parallel.
+struct EnvironmentalChange {
+    std::vector<MatterAttributePath> dirtyAttributes;
 };
 
 class Reconciler {
@@ -74,19 +92,28 @@ public:
 
     /// Apply a controller-side intent. Updates state and returns the
     /// dirty-attribute set + any S21 command that should now be sent.
-    AppliedChange applyIntent(const WriteIntent& intent);
+    OperationalChange applyIntent(const WriteIntent& intent);
 
     /// Apply a bundle of intents as if they arrived simultaneously. Used
     /// by AtomicTxn::commit to implement Matter AtomicRequest semantics
     /// without the centre drift that two non-atomic Auto-band edits would
     /// cause. Special-cases: in Auto mode, a (heat, cool) pair collapses
     /// to autoSetpoint = midpoint. Returns the same shape as applyIntent.
-    AppliedChange applyAtomicBundle(const std::vector<WriteIntent>& intents);
+    OperationalChange applyAtomicBundle(const std::vector<WriteIntent>& intents);
 
-    /// Apply a device-side observation (polled S21 snapshot). Updates state
-    /// and returns the dirty-attribute set; sendCommand is normally nullopt
-    /// because polls don't generate writes.
-    AppliedChange applyObservation(const S21State& observation);
+    /// Apply the operational half of a poll snapshot (onOff / mode /
+    /// setpoint / fan / refrigerantValveOpen). Updates state and returns
+    /// the dirty-attribute set; sendCommand is usually nullopt because
+    /// observations don't generate writes, but a fresh observation can
+    /// clear an in-flight and unblock a previously-queued intent.
+    OperationalChange applyOperationalObservation(const S21OperationalObservation& obs);
+
+    /// Apply the environmental half of a poll snapshot (indoor/outdoor
+    /// temperature, humidity). Issued only when the manager's countdown
+    /// fires. Returns the dirty-attribute set. No sendCommand: environmental
+    /// observations touch only SensorFields and cannot make pendingCommand
+    /// answer differently.
+    EnvironmentalChange applyEnvironmentalObservation(const S21EnvironmentalObservation& obs);
 
     /// Promote the corresponding twins to in-flight. Call after the S21
     /// command has been handed off to the data link.

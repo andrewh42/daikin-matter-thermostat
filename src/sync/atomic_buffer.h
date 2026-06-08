@@ -58,7 +58,7 @@ public:
 
     Status begin();
     Status write(const WriteIntent& intent);
-    AppliedChange commit();
+    OperationalChange commit();
     Status rollback();
 
     bool   isOpen()        const { return mOpen; }

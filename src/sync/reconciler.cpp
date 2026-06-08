@@ -170,7 +170,7 @@ void Reconciler::apply(const SetSpeedSettingIntent& i)
 
 // ─── Public entry points ──────────────────────────────────────────────────────
 
-AppliedChange Reconciler::applyIntent(const WriteIntent& intent)
+OperationalChange Reconciler::applyIntent(const WriteIntent& intent)
 {
     const auto before = mProjector.project(mState);
     std::visit([this](const auto& specific) { apply(specific); }, intent);
@@ -179,7 +179,7 @@ AppliedChange Reconciler::applyIntent(const WriteIntent& intent)
     return {diffProjections(before, after, mConfig.endpoint), pendingCommand()};
 }
 
-AppliedChange Reconciler::applyAtomicBundle(const std::vector<WriteIntent>& intents)
+OperationalChange Reconciler::applyAtomicBundle(const std::vector<WriteIntent>& intents)
 {
     const auto before = mProjector.project(mState);
 
@@ -219,7 +219,8 @@ AppliedChange Reconciler::applyAtomicBundle(const std::vector<WriteIntent>& inte
     return {diffProjections(before, after, mConfig.endpoint), pendingCommand()};
 }
 
-AppliedChange Reconciler::applyObservation(const S21State& obs)
+OperationalChange Reconciler::applyOperationalObservation(
+    const S21OperationalObservation& obs)
 {
     const auto before = mProjector.project(mState);
     const int64_t now = mTime.millis();
@@ -257,20 +258,31 @@ AppliedChange Reconciler::applyObservation(const S21State& obs)
     mState.fan.applyObservation(observedFan, Source::Device);
     mLastDeviceObserved.fan = now;
 
-    mState.indoorTemp.applyObservation(obs.indoorTemperatureCelsius);
-    mState.outdoorTemp.applyObservation(obs.outdoorTemperatureCelsius);
-    mState.humidity.applyObservation(obs.indoorRelativeHumidityPercent);
     mState.refrigerantValveOpen.applyObservation(obs.refrigerantValveOpen);
 
-    // A successful poll proves the link is up.
+    // A successful op observation proves the link is up. Env doesn't run
+    // every tick, so reachable is anchored on the op heartbeat alone.
     mState.reachable.applyObservation(true);
 
     const auto after = mProjector.project(mState);
-    AppliedChange change{diffProjections(before, after, mConfig.endpoint), std::nullopt};
+    OperationalChange change{diffProjections(before, after, mConfig.endpoint), std::nullopt};
     // A fresh observation can clear an in-flight and unblock a queued
     // controller intent — check pendingCommand even on the observation path.
     change.sendCommand = pendingCommand();
     return change;
+}
+
+EnvironmentalChange Reconciler::applyEnvironmentalObservation(
+    const S21EnvironmentalObservation& obs)
+{
+    const auto before = mProjector.project(mState);
+
+    mState.indoorTemp.applyObservation(obs.indoorTemperatureCelsius);
+    mState.outdoorTemp.applyObservation(obs.outdoorTemperatureCelsius);
+    mState.humidity.applyObservation(obs.indoorRelativeHumidityPercent);
+
+    const auto after = mProjector.project(mState);
+    return {diffProjections(before, after, mConfig.endpoint)};
 }
 
 std::optional<S21OperationCommand> Reconciler::pendingCommand() const

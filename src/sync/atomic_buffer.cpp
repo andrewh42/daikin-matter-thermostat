@@ -52,14 +52,14 @@ AtomicTxn::Status AtomicTxn::write(const WriteIntent& intent)
     return Status::AppliedNow;
 }
 
-AppliedChange AtomicTxn::commit()
+OperationalChange AtomicTxn::commit()
 {
     if (dropIfTimedOut()) {
         // The buffered intents are gone; report nothing happened. Caller
         // (AAI) should translate this to a TIMEOUT status on the wire.
-        return AppliedChange{};
+        return OperationalChange{};
     }
-    if (!mOpen) return AppliedChange{};
+    if (!mOpen) return OperationalChange{};
 
     auto change = mRec.applyAtomicBundle(mBuffer);
     mBuffer.clear();

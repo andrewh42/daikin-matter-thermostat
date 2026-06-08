@@ -32,7 +32,7 @@ struct Transcript {
         std::vector<MatterAttributePath>   dirty;
     };
     std::vector<Entry> entries;
-    void record(const AppliedChange& c) {
+    void record(const OperationalChange& c) {
         entries.push_back({c.sendCommand, c.dirtyAttributes.size(), c.dirtyAttributes});
     }
 };
@@ -50,10 +50,10 @@ bool transcriptContainsAttribute(const Transcript& t,
                        });
 }
 
-S21State poll(bool onOff, OperatingMode mode, int16_t setpoint,
-              FanMode fan = FanMode::Auto, int16_t indoor = 2300)
+S21OperationalObservation opPoll(bool onOff, OperatingMode mode, int16_t setpoint,
+                                 FanMode fan = FanMode::Auto)
 {
-    return S21State{onOff, mode, setpoint, fan, indoor, 1500, 50};
+    return {onOff, mode, setpoint, fan, std::nullopt};
 }
 
 } // namespace
@@ -71,7 +71,7 @@ TEST_CASE("Integration: poll/intent/poll/intent/poll converges with one D1 per i
     Transcript t;
 
     // Step 0: first poll establishes the device baseline.
-    t.record(rec.applyObservation(poll(true, OperatingMode::Cool, 2400)));
+    t.record(rec.applyOperationalObservation(opPoll(true, OperatingMode::Cool, 2400)));
     REQUIRE_FALSE(t.entries[0].sendCommand.has_value());
 
     // Step 1: controller raises cool setpoint to 26.
@@ -81,7 +81,7 @@ TEST_CASE("Integration: poll/intent/poll/intent/poll converges with one D1 per i
     rec.onCommandSent(*t.entries[1].sendCommand);
 
     // Step 2: confirming poll — device returns 26. No second D1.
-    t.record(rec.applyObservation(poll(true, OperatingMode::Cool, 2600)));
+    t.record(rec.applyOperationalObservation(opPoll(true, OperatingMode::Cool, 2600)));
     REQUIRE_FALSE(t.entries[2].sendCommand.has_value());
 
     // Step 3: controller flips mode to Heat. Setpoint switches to the
@@ -96,7 +96,7 @@ TEST_CASE("Integration: poll/intent/poll/intent/poll converges with one D1 per i
     rec.onCommandSent(*t.entries[3].sendCommand);
 
     // Step 4: confirming Heat-mode poll. No D1.
-    t.record(rec.applyObservation(poll(true, OperatingMode::Heat, 2000)));
+    t.record(rec.applyOperationalObservation(opPoll(true, OperatingMode::Heat, 2000)));
     REQUIRE_FALSE(t.entries[4].sendCommand.has_value());
 }
 
@@ -107,18 +107,18 @@ TEST_CASE("Integration: stale poll arriving after fresh write doesn't kick a re-
     LogicalACState   state(LogicalACStateDefaults{
         .onOff = true, .mode = SystemModeEnum::kCool, .coolSetpoint = 2400});
     Reconciler       rec(state, time);
-    rec.applyObservation(poll(true, OperatingMode::Cool, 2400));
+    rec.applyOperationalObservation(opPoll(true, OperatingMode::Cool, 2400));
 
     auto change = rec.applyIntent(SetOccupiedCoolingSetpointIntent{2600});
     rec.onCommandSent(*change.sendCommand);
 
     // Stale poll: still reads 2400. Reconciler should leave state alone
     // and not produce a fresh D1.
-    auto staleChange = rec.applyObservation(poll(true, OperatingMode::Cool, 2400));
+    auto staleChange = rec.applyOperationalObservation(opPoll(true, OperatingMode::Cool, 2400));
     REQUIRE_FALSE(staleChange.sendCommand.has_value());
 
     // Then the real confirming poll arrives.
-    auto confirmedChange = rec.applyObservation(poll(true, OperatingMode::Cool, 2600));
+    auto confirmedChange = rec.applyOperationalObservation(opPoll(true, OperatingMode::Cool, 2600));
     REQUIRE_FALSE(confirmedChange.sendCommand.has_value());
     REQUIRE(state.coolSetpoint.observed() == 2600);
     REQUIRE_FALSE(state.coolSetpoint.inFlight().has_value());
@@ -131,18 +131,18 @@ TEST_CASE("Integration: external panel change between confirmed write and next p
     LogicalACState   state(LogicalACStateDefaults{
         .onOff = true, .mode = SystemModeEnum::kCool, .coolSetpoint = 2400});
     Reconciler       rec(state, time);
-    rec.applyObservation(poll(true, OperatingMode::Cool, 2400));
+    rec.applyOperationalObservation(opPoll(true, OperatingMode::Cool, 2400));
 
     // Matter write → confirm.
     auto change = rec.applyIntent(SetOccupiedCoolingSetpointIntent{2600});
     rec.onCommandSent(*change.sendCommand);
-    rec.applyObservation(poll(true, OperatingMode::Cool, 2600));
+    rec.applyOperationalObservation(opPoll(true, OperatingMode::Cool, 2600));
     REQUIRE(state.coolSetpoint.attribution() == ObservationSource::Matter);
 
     // Panel pushes setpoint to 22. Walk past the guard window first so
     // the change is treated as an external override.
     time.advance(2'000);
-    auto change2 = rec.applyObservation(poll(true, OperatingMode::Cool, 2200));
+    auto change2 = rec.applyOperationalObservation(opPoll(true, OperatingMode::Cool, 2200));
     REQUIRE(state.coolSetpoint.observed() == 2200);
     REQUIRE(state.coolSetpoint.attribution() == ObservationSource::Device);
     REQUIRE_FALSE(change2.sendCommand.has_value()); // we accept the panel value
@@ -157,7 +157,7 @@ TEST_CASE("Integration: AtomicRequest commits both setpoints as one D1",
         .heatSetpoint = 2000, .coolSetpoint = 2500});
     Reconciler       rec(state, time);
     AtomicTxn        txn(rec, time);
-    rec.applyObservation(poll(true, OperatingMode::Auto, 2200));
+    rec.applyOperationalObservation(opPoll(true, OperatingMode::Auto, 2200));
 
     REQUIRE(txn.begin() == AtomicTxn::Status::Ok);
     txn.write(SetOccupiedHeatingSetpointIntent{2350});

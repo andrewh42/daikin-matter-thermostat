@@ -5,6 +5,7 @@
  */
 
 #include "airconditioner_manager.h"
+#include "sync/s21_observation.h"
 #include "sync/sync_reader.h"
 #include "sync/sync_stack.h"
 
@@ -107,20 +108,53 @@ void AirConditionerManager::PollWorkHandler(k_work* work)
 
 void AirConditionerManager::Poll()
 {
-    auto op        = mS21Manager->getOperation();
-    auto indoor    = mS21Manager->getRoomTemperature();
-    auto outdoor   = mS21Manager->getOutdoorTemperature();
-    auto humidity  = mS21Manager->getHumidity();
+    // Env first: when both phases fire on the same tick, the operational
+    // projector pass downstream sees the freshly-applied indoor temperature
+    // when it computes RunningMode (Auto-mode disambiguation, no-valve
+    // hysteresis fallback). Dirty attribution lands in one pass instead of
+    // an env-then-op re-flip.
+    PollEnvironmentalPhase();
+    PollOperationalPhase();
+    // Dirty-attribute flush, command-pump scheduling, and the LED side
+    // effect for OnOff transitions are all handled by the SyncStack hooks
+    // installed in Init().
+}
 
-    if (!op)        LOG_WRN("getOperation failed: %s",          op.error().message);
-    if (!indoor)    LOG_WRN("getRoomTemperature failed: %s",    indoor.error().message);
-    if (!outdoor)   LOG_INF("getOutdoorTemperature failed: %s", outdoor.error().message);
-    if (!humidity)  LOG_INF("getHumidity failed: %s",           humidity.error().message);
+void AirConditionerManager::PollEnvironmentalPhase()
+{
+    const bool envTick = (mEnvironmentalReadCountdown == 0);
+    if (envTick) mEnvironmentalReadCountdown = kS21EnvironmentalSensorReadTicks - 1;
+    else         --mEnvironmentalReadCountdown;
+    if (!envTick) return;
 
-    // Reachable supervision: count consecutive whole-poll failures. The
-    // primary getters are op/indoor; outdoor and humidity are optional on
-    // some hardware variants so they don't contribute to the failure count.
-    if (!op && !indoor) {
+    auto indoor   = mS21Manager->getRoomTemperature();
+    auto outdoor  = mS21Manager->getOutdoorTemperature();
+    auto humidity = mS21Manager->getHumidity();
+
+    if (!indoor)   LOG_WRN("getRoomTemperature failed: %s",    indoor.error().message);
+    if (!outdoor)  LOG_INF("getOutdoorTemperature failed: %s", outdoor.error().message);
+    if (!humidity) LOG_INF("getHumidity failed: %s",           humidity.error().message);
+
+    // All-or-nothing env contract (C1 split). Partial sensor data would
+    // leave LogicalACState's SensorFields out of sync with each other for
+    // the rest of the env cycle; better to skip this tick and try the
+    // next one ~2 minutes later.
+    if (!indoor || !outdoor || !humidity) return;
+
+    mSyncStack->ApplyEnvironmentalObservation(sync::S21EnvironmentalObservation{
+        .indoorTemperatureCelsius      = *indoor,
+        .outdoorTemperatureCelsius     = *outdoor,
+        .indoorRelativeHumidityPercent = *humidity,
+    });
+}
+
+void AirConditionerManager::PollOperationalPhase()
+{
+    auto op = mS21Manager->getOperation();
+    if (!op) LOG_WRN("getOperation failed: %s", op.error().message);
+
+    // Reachability heartbeat is op alone: env doesn't run every tick.
+    if (!op) {
         if (++mConsecutivePollFailures >= kReachableFailureThreshold) {
             LOG_WRN("S21 link unresponsive after %d polls; marking unreachable",
                     mConsecutivePollFailures);
@@ -129,8 +163,6 @@ void AirConditionerManager::Poll()
         return;
     }
     mConsecutivePollFailures = 0;
-
-    if (!op || !indoor || !outdoor || !humidity) return;
 
     auto [onOff, mode, setpoint, fanMode] = *op;
 
@@ -144,21 +176,13 @@ void AirConditionerManager::Poll()
         else            refrigerantValveOpen = unitState->refrigerantValveOpen;
     }
 
-    const S21State state{
-        .onOff                         = onOff,
-        .operatingMode                 = mode,
-        .setpointCelsius               = setpoint,
-        .fanMode                       = fanMode,
-        .indoorTemperatureCelsius      = *indoor,
-        .outdoorTemperatureCelsius     = *outdoor,
-        .indoorRelativeHumidityPercent = *humidity,
-        .refrigerantValveOpen          = refrigerantValveOpen,
-    };
-
-    mSyncStack->ApplyObservation(state);
-    // Dirty-attribute flush, command-pump scheduling, AND the LED side
-    // effect for OnOff transitions are all handled by the SyncStack
-    // hooks installed in Init(). Nothing more to do here.
+    mSyncStack->ApplyOperationalObservation(sync::S21OperationalObservation{
+        .onOff                = onOff,
+        .operatingMode        = mode,
+        .setpointCelsius      = setpoint,
+        .fanMode              = fanMode,
+        .refrigerantValveOpen = refrigerantValveOpen,
+    });
 }
 
 void AirConditionerManager::InitRetryWorkHandler(k_work* work)

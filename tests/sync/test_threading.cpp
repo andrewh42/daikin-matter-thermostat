@@ -5,8 +5,8 @@
  * -----------------------------
  * Two std::threads pummel a Reconciler from both sides — one playing the
  * Matter-event-loop role (applyIntent), the other the S21-work-queue
- * role (applyObservation). A std::mutex stands in for SyncStack's
- * Zephyr k_mutex so the test is host-portable.
+ * role (applyOperationalObservation). A std::mutex stands in for
+ * SyncStack's Zephyr k_mutex so the test is host-portable.
  *
  * What this catches:
  *   - data races on TwinField fields (UBSan would fire);
@@ -50,9 +50,9 @@ struct LockedReconciler {
         std::lock_guard<std::mutex> g(lock);
         rec.applyIntent(intent);
     }
-    void applyObservation(const S21State& obs) {
+    void applyOperationalObservation(const S21OperationalObservation& obs) {
         std::lock_guard<std::mutex> g(lock);
-        rec.applyObservation(obs);
+        rec.applyOperationalObservation(obs);
     }
     int16_t coolDesired() const {
         std::lock_guard<std::mutex> g(lock);
@@ -64,9 +64,9 @@ struct LockedReconciler {
     }
 };
 
-S21State pollState(int16_t setpoint)
+S21OperationalObservation opPoll(int16_t setpoint)
 {
-    return S21State{true, OperatingMode::Cool, setpoint, FanMode::Auto, 2300, 1500, 50};
+    return {true, OperatingMode::Cool, setpoint, FanMode::Auto, std::nullopt};
 }
 
 } // namespace
@@ -91,7 +91,7 @@ TEST_CASE("Threading: 10k interleaved intents and observations don't corrupt sta
     std::thread s21Thread([&] {
         for (int i = 0; i < kIterations; ++i) {
             const int16_t v = 2400 + (i % 100);
-            h.applyObservation(pollState(v));
+            h.applyOperationalObservation(opPoll(v));
             observationsApplied.fetch_add(1, std::memory_order_relaxed);
         }
     });

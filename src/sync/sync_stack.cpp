@@ -120,9 +120,9 @@ void SyncStack::Shutdown()
 
 // ─── Mutating entry points ────────────────────────────────────────────────────
 
-AppliedChange SyncStack::ApplyIntent(const WriteIntent& intent)
+OperationalChange SyncStack::ApplyIntent(const WriteIntent& intent)
 {
-    AppliedChange change;
+    OperationalChange change;
     {
         LockGuard g(mLock);
         change = mReconciler->applyIntent(intent);
@@ -134,15 +134,30 @@ AppliedChange SyncStack::ApplyIntent(const WriteIntent& intent)
     return change;
 }
 
-AppliedChange SyncStack::ApplyObservation(const S21State& obs)
+OperationalChange SyncStack::ApplyOperationalObservation(
+    const S21OperationalObservation& obs)
 {
-    AppliedChange change;
+    OperationalChange change;
     {
         LockGuard g(mLock);
-        change = mReconciler->applyObservation(obs);
+        change = mReconciler->applyOperationalObservation(obs);
     }
     if (mDirtyHook && !change.dirtyAttributes.empty()) mDirtyHook(change.dirtyAttributes);
     if (mPumpHook  && change.sendCommand.has_value()) mPumpHook();
+    return change;
+}
+
+EnvironmentalChange SyncStack::ApplyEnvironmentalObservation(
+    const S21EnvironmentalObservation& obs)
+{
+    EnvironmentalChange change;
+    {
+        LockGuard g(mLock);
+        change = mReconciler->applyEnvironmentalObservation(obs);
+    }
+    if (mDirtyHook && !change.dirtyAttributes.empty()) mDirtyHook(change.dirtyAttributes);
+    // No pump check: env observations touch only SensorFields and cannot
+    // produce a sendCommand. The narrower return type makes this static.
     return change;
 }
 
@@ -184,7 +199,7 @@ AtomicTxn::Status SyncStack::AtomicWrite(const WriteIntent& intent)
     return mAtomic->write(intent);
 }
 
-AppliedChange SyncStack::CommitAtomic()
+OperationalChange SyncStack::CommitAtomic()
 {
     LockGuard g(mLock);
     return mAtomic->commit();

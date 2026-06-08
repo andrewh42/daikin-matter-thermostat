@@ -54,12 +54,21 @@ public:
     /// Apply a controller write. Called from AAI Write, under the CHIP
     /// stack lock. Returns the resulting dirty-path set and the next S21
     /// command (if any) for the pump to dispatch.
-    AppliedChange ApplyIntent(const WriteIntent& intent);
+    OperationalChange ApplyIntent(const WriteIntent& intent);
 
-    /// Apply a poll observation. Called from the S21 work queue. Returns
-    /// the dirty-path set; the caller posts each path to the Matter event
+    /// Apply the operational half of a poll snapshot (onOff / mode /
+    /// setpoint / fan / refrigerantValveOpen). Called from the S21 work
+    /// queue every poll tick. Returns the dirty-path set + an optional
+    /// follow-up command; the caller posts each path to the Matter event
     /// loop for MatterReportingAttributeChangeCallback under LockChipStack.
-    AppliedChange ApplyObservation(const S21State& obs);
+    OperationalChange ApplyOperationalObservation(const S21OperationalObservation& obs);
+
+    /// Apply the environmental half of a poll snapshot (indoor/outdoor
+    /// temperature, humidity). Called from the S21 work queue at the
+    /// reduced sensor cadence (kS21EnvironmentalSensorReadTicks). Returns
+    /// the dirty-path set only — env observations cannot produce a
+    /// follow-up S21 command.
+    EnvironmentalChange ApplyEnvironmentalObservation(const S21EnvironmentalObservation& obs);
 
     /// Promote desired→inFlight after a successful setOperation. Called
     /// from the S21 work queue.
@@ -93,7 +102,7 @@ public:
 
     AtomicTxn::Status BeginAtomic();
     AtomicTxn::Status AtomicWrite(const WriteIntent& intent);
-    AppliedChange     CommitAtomic();
+    OperationalChange     CommitAtomic();
     AtomicTxn::Status RollbackAtomic();
 
     // ─── Per-attribute projected reads ───────────────────────────────────────

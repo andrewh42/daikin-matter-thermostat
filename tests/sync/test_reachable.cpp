@@ -19,9 +19,9 @@ using namespace sync;
 
 namespace {
 
-S21State okPoll()
+S21OperationalObservation okOperationalObservation()
 {
-    return S21State{true, OperatingMode::Cool, 2400, FanMode::Auto, 2300, 1500, 50};
+    return {true, OperatingMode::Cool, 2400, FanMode::Auto, std::nullopt};
 }
 
 } // namespace
@@ -39,7 +39,7 @@ TEST_CASE("Reachable: first successful observation flips to true",
     LogicalACState   state;
     Reconciler       rec(state, time);
 
-    auto change = rec.applyObservation(okPoll());
+    auto change = rec.applyOperationalObservation(okOperationalObservation());
 
     REQUIRE(state.reachable.observed());
     // No specific assertion on dirty paths until the BDBI cluster is
@@ -55,13 +55,29 @@ TEST_CASE("Reachable: applying observation after explicit link-down flips back t
     LogicalACState   state;
     Reconciler       rec(state, time);
 
-    rec.applyObservation(okPoll());
+    rec.applyOperationalObservation(okOperationalObservation());
     REQUIRE(state.reachable.observed());
 
     // Simulate the supervisor's NotifyLinkDown path.
     state.reachable.applyObservation(false);
     REQUIRE_FALSE(state.reachable.observed());
 
-    rec.applyObservation(okPoll());
+    rec.applyOperationalObservation(okOperationalObservation());
     REQUIRE(state.reachable.observed());
+}
+
+TEST_CASE("Reachable: environmental observation alone does not flip reachable",
+          "[phase8][reachable][c1-split]")
+{
+    // Reachable is anchored on the op heartbeat. An env observation
+    // arriving without a preceding op observation must not paper over a
+    // link-down — the next op tick is the authoritative signal.
+    ManualTimeSource time;
+    LogicalACState   state;
+    Reconciler       rec(state, time);
+
+    REQUIRE_FALSE(state.reachable.observed());
+
+    rec.applyEnvironmentalObservation({2300, 1500, 50});
+    REQUIRE_FALSE(state.reachable.observed());
 }

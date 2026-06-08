@@ -62,14 +62,27 @@ class AirConditionerManager {
     static constexpr int kS21InitRetryMaximumIntervalMilliSec = 60'000;
     static constexpr int kCommandDebounceMs                   = 50;
 
-    /// Number of consecutive whole-poll failures (every getter erroring)
-    /// before we flip the bridge's Reachable view to false. Three at the
-    /// 10 s poll interval gives a ~30 s window — long enough to absorb a
-    /// single transient bus glitch, short enough to surface a real outage
-    /// before the controller's subscription timeout.
+    /// Cadence ratio of operational to environmental polls. Environmental
+    /// reads (room/outdoor temperature, humidity) fire on every Nth poll
+    /// where N = this constant; operational reads (op + conditional unit
+    /// state) fire every poll. At kS21PollIntervalSec = 10 s and N = 12,
+    /// sensors refresh every ~2 minutes — enough for steady-state HVAC use
+    /// and a meaningful reduction in S21 traffic.
+    static constexpr int kS21EnvironmentalSensorReadTicks = 12;
+
+    /// Number of consecutive operational-poll failures before we flip the
+    /// bridge's Reachable view to false. Three at the 10 s poll interval
+    /// gives a ~30 s window — long enough to absorb a single transient bus
+    /// glitch, short enough to surface a real outage before the controller's
+    /// subscription timeout.
     static constexpr int kReachableFailureThreshold = 3;
 
     int mConsecutivePollFailures{0};
+
+    /// Ticks remaining until the next environmental phase. Initialised to 0
+    /// so the first poll after boot performs both phases — controllers see
+    /// a complete view at boot.
+    int mEnvironmentalReadCountdown{0};
 
     S21Manager*             mS21Manager{nullptr};
     sync::SyncStack*        mSyncStack{nullptr};
@@ -84,6 +97,8 @@ class AirConditionerManager {
     static void CommandWorkHandler(k_work* work);
 
     void Poll();
+    void PollEnvironmentalPhase();
+    void PollOperationalPhase();
 
     /// SyncStack hook: queue mCommandWork on the S21 work queue with a
     /// short debounce so consecutive intents collapse into one D1.
