@@ -92,6 +92,7 @@ struct LogicalACState {
     }
 
     TwinField<bool>           onOff;
+    TwinField<std::optional<bool>>    refrigerantValveOpen;
     TwinField<SystemModeEnum> mode;
     TwinField<int16_t>        heatSetpoint;
     TwinField<int16_t>        coolSetpoint;
@@ -101,7 +102,7 @@ struct LogicalACState {
     TwinField<std::optional<int16_t>> indoorTemp;
     TwinField<std::optional<int16_t>> outdoorTemp;
     TwinField<std::optional<uint8_t>> humidity;
-    TwinField<std::optional<bool>>    refrigerantValveOpen;
+
     TwinField<bool>                   reachable;
 
     /// The setpoint twin currently in charge of the device's target T,

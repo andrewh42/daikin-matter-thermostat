@@ -348,6 +348,36 @@ TEST_CASE("S21Manager getSetpoint propagates getOperation error", "[s21mgr][get]
     REQUIRE_FALSE(f.mgr.getSetpoint().has_value());
 }
 
+// ─── F1 fan-Auto cross-check (RG) ─────────────────────────────────────────────
+
+TEST_CASE("S21Manager getOperation on+Auto cross-checks fan mode via RG",
+          "[s21mgr][get]")
+{
+    Fixture f;
+    f.initV1();
+    f.mock.operationResult = {std::make_tuple(true, OperatingMode::Cool, 2200, FanMode::Auto)};
+    f.mock.fanModeResult   = {FanMode::Quiet};
+
+    auto r = f.mgr.getOperation();
+    REQUIRE(r.has_value());
+    REQUIRE(std::get<3>(*r) == FanMode::Quiet);
+    REQUIRE(f.mock.getFanModeCallCount == 1);
+}
+
+TEST_CASE("S21Manager getOperation off+Auto skips RG cross-check",
+          "[s21mgr][get]")
+{
+    Fixture f;
+    f.initV1();
+    f.mock.operationResult = {std::make_tuple(false, OperatingMode::Cool, 2200, FanMode::Auto)};
+    f.mock.fanModeResult   = {FanMode::Quiet};
+
+    auto r = f.mgr.getOperation();
+    REQUIRE(r.has_value());
+    REQUIRE(std::get<3>(*r) == FanMode::Auto); // raw F1 value, not cross-checked
+    REQUIRE(f.mock.getFanModeCallCount == 0);
+}
+
 // ─── Fallback: getRoomTemperature ─────────────────────────────────────────────
 
 TEST_CASE("S21Manager getRoomTemperature returns RH value on success", "[s21mgr][fallback]")

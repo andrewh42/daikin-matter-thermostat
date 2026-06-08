@@ -135,7 +135,9 @@ auto S21Manager::getOperation() -> Result<S21Presentation::GetOperationResult>
     if (!op) return presentationError(op.error());
     // Known issue: getOperation() (F1 command) may report Auto when the fan mode
     // is actually Quiet. Cross-check with getFanMode() (RG command) in that case.
-    if (std::get<3>(*op) == FanMode::Auto) {
+    // Skip the cross-check when the unit is off — no fan is running so the
+    // distinction doesn't matter, and we save an S21 round-trip.
+    if (std::get<0>(*op) && std::get<3>(*op) == FanMode::Auto) {
         auto fanMode = mFanModeCache.get();
         if (fanMode) {
             return std::make_tuple(std::get<0>(*op), std::get<1>(*op),
