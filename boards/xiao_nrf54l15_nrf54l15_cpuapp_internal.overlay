@@ -65,12 +65,17 @@
 
 /* only present on the XIAO Sense variant */
 &lsm6ds3tr_c {
-        status = "disabled";
+	status = "disabled";
+};
+
+/* only present on the XIAO Sense variant */
+&pdm_imu_pwr {
+	status = "disabled";
 };
 
 /* disable battery voltage monitoring (regulator-boot-off). change to regulator-boot-on if running on battery and monitoring voltage (ADC P1.14). */
 &vbat_pwr {
-        regulator-boot-off;
+	regulator-boot-off;
 };
 
 /* begin: from boards/nordic/nrf54l15dk/nrf54l_05_10_15_cpuapp_common.dtsi */
