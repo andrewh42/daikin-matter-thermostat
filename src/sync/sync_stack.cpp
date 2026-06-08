@@ -161,9 +161,7 @@ void SyncStack::OnCommandFailed()
 void SyncStack::NotifyLinkDown()
 {
     LockGuard g(mLock);
-    // Marking Device source so the reachable twin doesn't claim a fake
-    // Matter-source observation; this also resets the guard window.
-    mState->reachable.applyObservation(false, ObservationSource::Device);
+    mState->reachable.applyObservation(false);
 }
 
 std::optional<S21OperationCommand> SyncStack::PendingCommand() const

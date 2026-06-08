@@ -59,7 +59,7 @@ TEST_CASE("Reachable: applying observation after explicit link-down flips back t
     REQUIRE(state.reachable.observed());
 
     // Simulate the supervisor's NotifyLinkDown path.
-    state.reachable.applyObservation(false, ObservationSource::Device);
+    state.reachable.applyObservation(false);
     REQUIRE_FALSE(state.reachable.observed());
 
     rec.applyObservation(okPoll());

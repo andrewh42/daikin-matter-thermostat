@@ -3,12 +3,17 @@
  *
  * LogicalACState
  * --------------
- * The bridge's canonical AC state. Each field is a TwinField that tracks
- * observed / desired / in-flight independently, so the reconciler can
- * decide per-attribute whether to send a device command or mark a cluster
- * attribute dirty.
+ * The bridge's canonical AC state. Reconcilable fields (onOff, mode,
+ * setpoints, fan) are TwinFields that track observed / desired / in-flight
+ * independently, so the reconciler can decide per-attribute whether to
+ * send a device command or mark a cluster attribute dirty.
  *
- * Three things to know:
+ * Observation-only fields (indoor/outdoor temperature, humidity,
+ * refrigerantValveOpen, reachable) are SensorFields. Matter never writes
+ * them, so the desired/in-flight halves of a twin would be dead weight;
+ * SensorField encodes that asymmetry in the type system.
+ *
+ * Two further things to know:
  *
  *  - The Auto setpoint is the *real* device target temperature in Auto
  *    mode. The Matter cluster exposes a band as (autoSetpoint − δ,
@@ -17,17 +22,13 @@
  *    single autoSetpoint update on write. See sync-analysis §4.6 and the
  *    Phase 3 projector tests.
  *
- *  - Sensor-only fields (indoor/outdoor temp, humidity, reachable) are
- *    still TwinFields — only their applyObservation path is used. Keeping
- *    one uniform type means the reconciler's mark-dirty loop is uniform
- *    too, with no special-case "is this an observation-only field?" code.
- *
  *  - The class is pure data + tiny accessors. The reconciler owns all
  *    policy. This keeps the type host-testable without dragging in CHIP
  *    types or Zephyr.
  */
 #pragma once
 
+#include "sensor_field.h"
 #include "twin_field.h"
 
 #include <app-common/zap-generated/attributes/Accessors.h>
@@ -92,18 +93,17 @@ struct LogicalACState {
     }
 
     TwinField<bool>           onOff;
-    TwinField<std::optional<bool>>    refrigerantValveOpen;
     TwinField<SystemModeEnum> mode;
     TwinField<int16_t>        heatSetpoint;
     TwinField<int16_t>        coolSetpoint;
     TwinField<int16_t>        autoSetpoint;
     TwinField<FanSpeed>       fan;
 
-    TwinField<std::optional<int16_t>> indoorTemp;
-    TwinField<std::optional<int16_t>> outdoorTemp;
-    TwinField<std::optional<uint8_t>> humidity;
-
-    TwinField<bool>                   reachable;
+    SensorField<std::optional<int16_t>> indoorTemp;
+    SensorField<std::optional<int16_t>> outdoorTemp;
+    SensorField<std::optional<uint8_t>> humidity;
+    SensorField<std::optional<bool>>    refrigerantValveOpen;
+    SensorField<bool>                   reachable;
 
     /// The setpoint twin currently in charge of the device's target T,
     /// given a system mode. Auto returns the auto-shadow; Cool/Heat return

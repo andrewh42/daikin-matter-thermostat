@@ -257,13 +257,13 @@ AppliedChange Reconciler::applyObservation(const S21State& obs)
     mState.fan.applyObservation(observedFan, Source::Device);
     mLastDeviceObserved.fan = now;
 
-    mState.indoorTemp.applyObservation(obs.indoorTemperatureCelsius, Source::Device);
-    mState.outdoorTemp.applyObservation(obs.outdoorTemperatureCelsius, Source::Device);
-    mState.humidity.applyObservation(obs.indoorRelativeHumidityPercent, Source::Device);
-    mState.refrigerantValveOpen.applyObservation(obs.refrigerantValveOpen, Source::Device);
+    mState.indoorTemp.applyObservation(obs.indoorTemperatureCelsius);
+    mState.outdoorTemp.applyObservation(obs.outdoorTemperatureCelsius);
+    mState.humidity.applyObservation(obs.indoorRelativeHumidityPercent);
+    mState.refrigerantValveOpen.applyObservation(obs.refrigerantValveOpen);
 
     // A successful poll proves the link is up.
-    mState.reachable.applyObservation(true, Source::Device);
+    mState.reachable.applyObservation(true);
 
     const auto after = mProjector.project(mState);
     AppliedChange change{diffProjections(before, after, mConfig.endpoint), std::nullopt};

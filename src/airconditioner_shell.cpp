@@ -5,8 +5,9 @@
  * canonical state (sync::LogicalACState) and related machinery.
  *
  * Usage:
- *   airconditioner status   # one TwinField per line: observed / desired /
- *                           # inFlight / lastSrc / attribution
+ *   airconditioner status   # one field per line. TwinFields show
+ *                           # observed / desired / inFlight / lastSrc /
+ *                           # attribution; SensorFields show observed only.
  *
  * Synchronous: handlers read sync::SyncStack under its internal mutex,
  * copy the state out, and format on the shell thread. Unlike s21_shell.cpp
@@ -14,6 +15,7 @@
  */
 
 #include "sync/logical_ac_state.h"
+#include "sync/sensor_field.h"
 #include "sync/sync_stack.h"
 #include "sync/twin_field.h"
 
@@ -31,6 +33,7 @@ using sync::FanLevel;
 using sync::FanSpeed;
 using sync::LogicalACState;
 using sync::ObservationSource;
+using sync::SensorField;
 using sync::TwinField;
 using SystemModeEnum = sync::SystemModeEnum;
 
@@ -126,7 +129,7 @@ const char* sourceStr(ObservationSource s)
     }
 }
 
-/* ── Per-twin printer ─────────────────────────────────────────────── */
+/* ── Per-field printers ───────────────────────────────────────────── */
 
 template <typename T, typename Fmt>
 void printTwin(const struct shell* sh, const char* name,
@@ -150,6 +153,15 @@ void printTwin(const struct shell* sh, const char* name,
         sourceStr(t.attribution()));
 }
 
+template <typename T, typename Fmt>
+void printSensor(const struct shell* sh, const char* name,
+                 const SensorField<T>& s, Fmt fmt)
+{
+    char obs[16];
+    fmt(obs, sizeof obs, s.observed());
+    shell_print(sh, "  %-18s observed=%s", name, obs);
+}
+
 /* ── Command handlers ─────────────────────────────────────────────── */
 
 int CmdStatus(const struct shell* sh, size_t /*argc*/, char** /*argv*/)
@@ -163,11 +175,11 @@ int CmdStatus(const struct shell* sh, size_t /*argc*/, char** /*argv*/)
     printTwin(sh, "coolSetpoint", s.coolSetpoint, fmtTemperature);
     printTwin(sh, "autoSetpoint", s.autoSetpoint, fmtTemperature);
     printTwin(sh, "fan",          s.fan,          fmtFanSpeed);
-    printTwin(sh, "indoorTemp",   s.indoorTemp,   fmtTemperatureOpt);
-    printTwin(sh, "outdoorTemp",  s.outdoorTemp,  fmtTemperatureOpt);
-    printTwin(sh, "humidity",     s.humidity,     fmtHumidityOpt);
-    printTwin(sh, "reachable",    s.reachable,    fmtBool);
-    printTwin(sh, "refrigerantValve", s.refrigerantValveOpen, fmtOpenClosedOpt);
+    printSensor(sh, "indoorTemp",       s.indoorTemp,           fmtTemperatureOpt);
+    printSensor(sh, "outdoorTemp",      s.outdoorTemp,          fmtTemperatureOpt);
+    printSensor(sh, "humidity",         s.humidity,             fmtHumidityOpt);
+    printSensor(sh, "reachable",        s.reachable,            fmtBool);
+    printSensor(sh, "refrigerantValve", s.refrigerantValveOpen, fmtOpenClosedOpt);
     return 0;
 }
 
@@ -177,9 +189,10 @@ int CmdStatus(const struct shell* sh, size_t /*argc*/, char** /*argv*/)
 
 SHELL_STATIC_SUBCMD_SET_CREATE(sub_airconditioner,
     SHELL_CMD_ARG(status, NULL,
-        "Print bridge LogicalACState, one TwinField per line.\n"
-        "Each line shows observed / desired / inFlight values plus the\n"
-        "last-observation source and the current attribution.\n"
+        "Print bridge LogicalACState, one field per line.\n"
+        "TwinFields show observed / desired / inFlight values plus the\n"
+        "last-observation source and the current attribution; SensorFields\n"
+        "(sensor-only readings) show observed only.\n"
         "Usage: airconditioner status\n",
         CmdStatus, 1, 0),
     SHELL_SUBCMD_SET_END

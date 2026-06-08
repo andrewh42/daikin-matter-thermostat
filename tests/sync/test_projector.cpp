@@ -252,7 +252,7 @@ namespace {
 // Apply a valve observation to a copy of the state and return it.
 LogicalACState withValve(LogicalACState s, std::optional<bool> valve)
 {
-    s.refrigerantValveOpen.applyObservation(valve, ObservationSource::Device);
+    s.refrigerantValveOpen.applyObservation(valve);
     return s;
 }
 
