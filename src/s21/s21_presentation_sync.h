@@ -66,4 +66,9 @@ class S21PresentationSync {
     /// @return {major, minor} on success, or an error if the unit sends NAK.
     virtual tl::expected<S21Presentation::GetProtocolVersionResult, S21PresentationError>
     getExtendedProtocolVersion() = 0;
+
+    /// @brief Reads unit state via the RzB2 command. Blocks until the response is received.
+    /// @return UnitState on success, or an error.
+    virtual tl::expected<S21Presentation::GetUnitStateResult, S21PresentationError>
+    getUnitState() = 0;
 };

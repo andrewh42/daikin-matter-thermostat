@@ -91,6 +91,9 @@ class S21Manager {
     /// Returns indoor humidity (%). Tries Re; falls back to F9 humidity on failure.
     Result<uint8_t> getHumidity();
 
+    /// Returns unit state via RzB2. Returns error if the command is unsupported or fails.
+    Result<S21Presentation::GetUnitStateResult> getUnitState();
+
     // ── Write operations ──────────────────────────────────────────────────
 
     /// Full set operation — mirrors S21Presentation::setOperation.
@@ -201,6 +204,7 @@ class S21Manager {
     CommandCapability mHumidityCapability;
     CommandCapability mCoarseTemperatureAndHumidityCapability;
     CommandCapability mFanModeCapability;
+    CommandCapability mUnitStateCapability;
 
     // Caches declared after capability members so FetchFn lambdas that capture `this`
     // access fully-initialized members when get() is eventually called.

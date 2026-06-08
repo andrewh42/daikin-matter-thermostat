@@ -705,3 +705,157 @@ TEST_CASE("S21Presentation getExtendedProtocolVersion rejects wrong response cod
     REQUIRE_FALSE(result.has_value());
     REQUIRE(std::string_view(result.error().what()) == "unexpected response code");
 }
+
+// ─── getUnitState ─────────────────────────────────────────────────────────────
+
+TEST_CASE("S21Presentation getUnitState sends RzB2 poll", "[s21pres][unitState]")
+{
+    MockS21DataLink mock;
+    S21Presentation pres(mock);
+    mock.nextResponse = bytes('S', 'z', 'B', '2', '0', '0');
+    pres.getUnitState([](auto) {});
+
+    REQUIRE(mock.lastTransmitted == bytes('R', 'z', 'B', '2'));
+}
+
+TEST_CASE("S21Presentation getUnitState parses offline SzB200 (all bits clear)", "[s21pres][unitState]")
+{
+    // SzB200: payload '0','0' → bits = 0x00 → all false
+    MockS21DataLink mock;
+    S21Presentation pres(mock);
+    mock.nextResponse = bytes('S', 'z', 'B', '2', '0', '0');
+
+    tl::expected<S21Presentation::GetUnitStateResult, S21PresentationError> result;
+    pres.getUnitState([&](auto r) { result = r; });
+
+    REQUIRE(result.has_value());
+    REQUIRE_FALSE(result->powerful);
+    REQUIRE_FALSE(result->defrost);
+    REQUIRE_FALSE(result->refrigerantValveOpen);
+    REQUIRE_FALSE(result->online);
+}
+
+TEST_CASE("S21Presentation getUnitState parses online SzB280 (bit 0x08)", "[s21pres][unitState]")
+{
+    // SzB280: payload '8','0' → hexNibble('8')|(hexNibble('0')<<4) = 0x08 → online only
+    MockS21DataLink mock;
+    S21Presentation pres(mock);
+    mock.nextResponse = bytes('S', 'z', 'B', '2', '8', '0');
+
+    tl::expected<S21Presentation::GetUnitStateResult, S21PresentationError> result;
+    pres.getUnitState([&](auto r) { result = r; });
+
+    REQUIRE(result.has_value());
+    REQUIRE_FALSE(result->powerful);
+    REQUIRE_FALSE(result->defrost);
+    REQUIRE_FALSE(result->refrigerantValveOpen);
+    REQUIRE(result->online);
+}
+
+TEST_CASE("S21Presentation getUnitState parses online+active SzB2C0 (bits 0x04+0x08)", "[s21pres][unitState]")
+{
+    // SzB2C0: payload 'C','0' → 0x0C → refrigerantValveOpen + online
+    MockS21DataLink mock;
+    S21Presentation pres(mock);
+    mock.nextResponse = bytes('S', 'z', 'B', '2', 'C', '0');
+
+    tl::expected<S21Presentation::GetUnitStateResult, S21PresentationError> result;
+    pres.getUnitState([&](auto r) { result = r; });
+
+    REQUIRE(result.has_value());
+    REQUIRE_FALSE(result->powerful);
+    REQUIRE_FALSE(result->defrost);
+    REQUIRE(result->refrigerantValveOpen);
+    REQUIRE(result->online);
+}
+
+TEST_CASE("S21Presentation getUnitState parses online+active+powerful SzB2D0 (bits 0x01+0x04+0x08)", "[s21pres][unitState]")
+{
+    // SzB2D0: payload 'D','0' → 0x0D → powerful + refrigerantValveOpen + online
+    MockS21DataLink mock;
+    S21Presentation pres(mock);
+    mock.nextResponse = bytes('S', 'z', 'B', '2', 'D', '0');
+
+    tl::expected<S21Presentation::GetUnitStateResult, S21PresentationError> result;
+    pres.getUnitState([&](auto r) { result = r; });
+
+    REQUIRE(result.has_value());
+    REQUIRE(result->powerful);
+    REQUIRE_FALSE(result->defrost);
+    REQUIRE(result->refrigerantValveOpen);
+    REQUIRE(result->online);
+}
+
+TEST_CASE("S21Presentation getUnitState parses defrost+online SzB2A0 (bits 0x02+0x08)", "[s21pres][unitState]")
+{
+    // SzB2A0: payload 'A','0' → 0x0A → defrost + online
+    MockS21DataLink mock;
+    S21Presentation pres(mock);
+    mock.nextResponse = bytes('S', 'z', 'B', '2', 'A', '0');
+
+    tl::expected<S21Presentation::GetUnitStateResult, S21PresentationError> result;
+    pres.getUnitState([&](auto r) { result = r; });
+
+    REQUIRE(result.has_value());
+    REQUIRE_FALSE(result->powerful);
+    REQUIRE(result->defrost);
+    REQUIRE_FALSE(result->refrigerantValveOpen);
+    REQUIRE(result->online);
+}
+
+TEST_CASE("S21Presentation getUnitState parses defrost+online+active SzB2E0 (bits 0x02+0x04+0x08)", "[s21pres][unitState]")
+{
+    // SzB2E0: payload 'E','0' → 0x0E → defrost + refrigerantValveOpen + online
+    MockS21DataLink mock;
+    S21Presentation pres(mock);
+    mock.nextResponse = bytes('S', 'z', 'B', '2', 'E', '0');
+
+    tl::expected<S21Presentation::GetUnitStateResult, S21PresentationError> result;
+    pres.getUnitState([&](auto r) { result = r; });
+
+    REQUIRE(result.has_value());
+    REQUIRE_FALSE(result->powerful);
+    REQUIRE(result->defrost);
+    REQUIRE(result->refrigerantValveOpen);
+    REQUIRE(result->online);
+}
+
+TEST_CASE("S21Presentation getUnitState rejects wrong 2-char response code", "[s21pres][unitState]")
+{
+    MockS21DataLink mock;
+    S21Presentation pres(mock);
+    mock.nextResponse = bytes('X', 'X', 'B', '2', '0', '0');
+
+    tl::expected<S21Presentation::GetUnitStateResult, S21PresentationError> result;
+    pres.getUnitState([&](auto r) { result = r; });
+
+    REQUIRE_FALSE(result.has_value());
+    REQUIRE(std::string_view(result.error().what()) == "unexpected response code");
+}
+
+TEST_CASE("S21Presentation getUnitState rejects wrong subcode bytes", "[s21pres][unitState]")
+{
+    // 'S','z' match but 'X','X' does not match 'B','2'
+    MockS21DataLink mock;
+    S21Presentation pres(mock);
+    mock.nextResponse = bytes('S', 'z', 'X', 'X', '0', '0');
+
+    tl::expected<S21Presentation::GetUnitStateResult, S21PresentationError> result;
+    pres.getUnitState([&](auto r) { result = r; });
+
+    REQUIRE_FALSE(result.has_value());
+    REQUIRE(std::string_view(result.error().what()) == "unexpected response code");
+}
+
+TEST_CASE("S21Presentation getUnitState propagates transact error", "[s21pres][unitState]")
+{
+    MockS21DataLink mock;
+    S21Presentation pres(mock);
+    mock.nextError = S21DataLinkError("timeout");
+
+    tl::expected<S21Presentation::GetUnitStateResult, S21PresentationError> result;
+    pres.getUnitState([&](auto r) { result = r; });
+
+    REQUIRE_FALSE(result.has_value());
+    REQUIRE(std::string_view(result.error().what()) == "timeout");
+}

@@ -242,6 +242,15 @@ auto S21Manager::setSetpoint(int16_t setPoint) -> Result<void>
     return setOperation(std::get<0>(*op), std::get<1>(*op), setPoint, std::get<3>(*op));
 }
 
+auto S21Manager::getUnitState() -> Result<S21Presentation::GetUnitStateResult>
+{
+    if (!isReady()) return notReady();
+    auto result = mUnitStateCapability.callWithTracking(
+        [this] { return mPresentation.getUnitState(); });
+    if (!result) return presentationError(result.error());
+    return *result;
+}
+
 auto S21Manager::setFanMode(FanMode fanMode) -> Result<void>
 {
     if (!isReady()) return notReady();

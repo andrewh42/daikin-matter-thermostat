@@ -50,6 +50,9 @@ class S21PresentationSyncAdapter : public S21PresentationSync {
     tl::expected<S21Presentation::GetProtocolVersionResult, S21PresentationError>
     getExtendedProtocolVersion() override;
 
+    tl::expected<S21Presentation::GetUnitStateResult, S21PresentationError>
+    getUnitState() override;
+
   private:
     template <typename T, typename E, typename AsyncFn>
     tl::expected<T, E> syncCall(AsyncFn&& fn);

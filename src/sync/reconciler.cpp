@@ -260,6 +260,7 @@ AppliedChange Reconciler::applyObservation(const S21State& obs)
     mState.indoorTemp.applyObservation(obs.indoorTemperatureCelsius, Source::Device);
     mState.outdoorTemp.applyObservation(obs.outdoorTemperatureCelsius, Source::Device);
     mState.humidity.applyObservation(obs.indoorRelativeHumidityPercent, Source::Device);
+    mState.refrigerantValveOpen.applyObservation(obs.refrigerantValveOpen, Source::Device);
 
     // A successful poll proves the link is up.
     mState.reachable.applyObservation(true, Source::Device);

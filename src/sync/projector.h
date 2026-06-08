@@ -114,6 +114,9 @@ public:
 
 private:
     ProjectorConfig mConfig;
+
+    ThermostatRunningModeEnum runningModeFromValve(bool refrigerantFlowing, const LogicalACState&) const;
+    ThermostatRunningModeEnum runningModeFromTemperature(const LogicalACState&) const;
 };
 
 /// Field-by-field diff of two projections. Returns the cluster-attribute

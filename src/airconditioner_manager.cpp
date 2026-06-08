@@ -107,15 +107,17 @@ void AirConditionerManager::PollWorkHandler(k_work* work)
 
 void AirConditionerManager::Poll()
 {
-    auto op       = mS21Manager->getOperation();
-    auto indoor   = mS21Manager->getRoomTemperature();
-    auto outdoor  = mS21Manager->getOutdoorTemperature();
-    auto humidity = mS21Manager->getHumidity();
+    auto op        = mS21Manager->getOperation();
+    auto indoor    = mS21Manager->getRoomTemperature();
+    auto outdoor   = mS21Manager->getOutdoorTemperature();
+    auto humidity  = mS21Manager->getHumidity();
+    auto unitState = mS21Manager->getUnitState();
 
-    if (!op)       LOG_WRN("getOperation failed: %s",          op.error().message);
-    if (!indoor)   LOG_WRN("getRoomTemperature failed: %s",    indoor.error().message);
-    if (!outdoor)  LOG_INF("getOutdoorTemperature failed: %s", outdoor.error().message);
-    if (!humidity) LOG_INF("getHumidity failed: %s",           humidity.error().message);
+    if (!op)        LOG_WRN("getOperation failed: %s",          op.error().message);
+    if (!indoor)    LOG_WRN("getRoomTemperature failed: %s",    indoor.error().message);
+    if (!outdoor)   LOG_INF("getOutdoorTemperature failed: %s", outdoor.error().message);
+    if (!humidity)  LOG_INF("getHumidity failed: %s",           humidity.error().message);
+    if (!unitState) LOG_INF("getUnitState failed: %s",          unitState.error().message);
 
     // Reachable supervision: count consecutive whole-poll failures. The
     // primary getters are op/indoor; outdoor and humidity are optional on
@@ -141,6 +143,9 @@ void AirConditionerManager::Poll()
         .indoorTemperatureCelsius      = *indoor,
         .outdoorTemperatureCelsius     = *outdoor,
         .indoorRelativeHumidityPercent = *humidity,
+        .refrigerantValveOpen          = unitState
+                                             ? std::optional<bool>{unitState->refrigerantValveOpen}
+                                             : std::nullopt,
     };
 
     mSyncStack->ApplyObservation(state);

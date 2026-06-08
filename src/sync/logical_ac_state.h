@@ -71,6 +71,7 @@ struct LogicalACStateDefaults {
     std::optional<int16_t> indoorTemp    = std::nullopt;
     std::optional<int16_t> outdoorTemp   = std::nullopt;
     std::optional<uint8_t> humidity      = std::nullopt;
+    std::optional<bool>    refrigerantValveOpen = std::nullopt;
     bool           reachable     = false;
 };
 
@@ -85,6 +86,7 @@ struct LogicalACState {
           indoorTemp(d.indoorTemp),
           outdoorTemp(d.outdoorTemp),
           humidity(d.humidity),
+          refrigerantValveOpen(d.refrigerantValveOpen),
           reachable(d.reachable)
     {
     }
@@ -99,6 +101,7 @@ struct LogicalACState {
     TwinField<std::optional<int16_t>> indoorTemp;
     TwinField<std::optional<int16_t>> outdoorTemp;
     TwinField<std::optional<uint8_t>> humidity;
+    TwinField<std::optional<bool>>    refrigerantValveOpen;
     TwinField<bool>                   reachable;
 
     /// The setpoint twin currently in charge of the device's target T,

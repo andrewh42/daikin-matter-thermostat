@@ -172,6 +172,21 @@ void S21Presentation::getProtocolVersion(GetProtocolVersionCallback cb)
                         });
 }
 
+/// @brief Decodes a 2-byte reversed ASCII hex byte (little-endian nibble order).
+/// payload[offset] is the low nibble; payload[offset+1] is the high nibble.
+/// Example: 'C','0' → hexNibble('C') | (hexNibble('0')<<4) = 0x0C.
+static uint8_t decodeRzHexByte(const std::vector<std::byte>& r, size_t offset)
+{
+    auto hexNibble = [](std::byte b) -> uint8_t {
+        uint8_t c = static_cast<uint8_t>(b);
+        if (c >= '0' && c <= '9') return static_cast<uint8_t>(c - '0');
+        if (c >= 'A' && c <= 'F') return static_cast<uint8_t>(c - 'A' + 10);
+        if (c >= 'a' && c <= 'f') return static_cast<uint8_t>(c - 'a' + 10);
+        return 0;
+    };
+    return static_cast<uint8_t>(hexNibble(r[offset]) | (hexNibble(r[offset + 1]) << 4));
+}
+
 void S21Presentation::getExtendedProtocolVersion(GetProtocolVersionCallback cb)
 {
     m_dataLink.transact(
@@ -181,5 +196,25 @@ void S21Presentation::getExtendedProtocolVersion(GetProtocolVersionCallback cb)
                 uint8_t minor = decodeVersionDigit((*response)[4]) + decodeVersionDigit((*response)[5]) * 10;
                 uint8_t major = decodeVersionDigit((*response)[6]) + decodeVersionDigit((*response)[7]) * 10;
                 cb(std::make_pair(major, minor));
+            });
+}
+
+void S21Presentation::getUnitState(GetUnitStateCallback cb)
+{
+    m_dataLink.transact(
+            {std::byte{'R'}, std::byte{'z'}, std::byte{'B'}, std::byte{'2'}},
+            [cb = std::move(cb)](tl::expected<std::vector<std::byte>, S21DataLinkError> response) {
+                if (!validateResponseCode(response, 'S', 'z', cb)) return;
+                if ((*response)[2] != std::byte{'B'} || (*response)[3] != std::byte{'2'}) {
+                    cb(tl::unexpected(S21PresentationError("unexpected response code")));
+                    return;
+                }
+                const uint8_t bits = decodeRzHexByte(*response, 4);
+                cb(UnitState{
+                    .powerful             = (bits & 0x01) != 0,
+                    .defrost              = (bits & 0x02) != 0,
+                    .refrigerantValveOpen = (bits & 0x04) != 0,
+                    .online               = (bits & 0x08) != 0,
+                });
             });
 }

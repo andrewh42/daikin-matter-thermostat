@@ -94,6 +94,15 @@ class S21Presentation {
     using GetProtocolVersionResult = std::pair<uint8_t, uint8_t>; // {major, minor}
     using GetProtocolVersionCallback = std::function<void(tl::expected<GetProtocolVersionResult, S21PresentationError>)>;
 
+    struct UnitState {
+        bool powerful;             ///< bit 0x01
+        bool defrost;              ///< bit 0x02
+        bool refrigerantValveOpen; ///< bit 0x04
+        bool online;               ///< bit 0x08
+    };
+    using GetUnitStateResult   = UnitState;
+    using GetUnitStateCallback = std::function<void(tl::expected<GetUnitStateResult, S21PresentationError>)>;
+
     /// @brief Reads coarse indoor/outdoor temperatures (0.01 °C, 0.5 °C steps) and humidity (%, 5% steps).
     /// @param cb callback invoked with (indoorTemp, outdoorTemp, humidity) on success, or an error.
     void getCoarseTemperatureAndHumidity(GetCoarseTemperatureAndHumidityCallback cb);
@@ -111,6 +120,11 @@ class S21Presentation {
     /// Older units respond with NAK, which is reported as an error.
     /// @param cb callback invoked with {major, minor} on success, or an error if the unit sends NAK.
     void getExtendedProtocolVersion(GetProtocolVersionCallback cb);
+
+    /// @brief Reads unit state via the RzB2 command.
+    /// Not all units support this command; unsupported units may respond with garbage rather than NAK.
+    /// @param cb callback invoked with UnitState on success, or an error.
+    void getUnitState(GetUnitStateCallback cb);
 
   private:
     S21DataLink& m_dataLink;

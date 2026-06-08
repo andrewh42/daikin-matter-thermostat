@@ -41,6 +41,12 @@ void fmtBool(char* buf, size_t n, bool v)
     snprintf(buf, n, "%s", v ? "true" : "false");
 }
 
+void fmtOpenClosedOpt(char* buf, size_t n, std::optional<bool> v)
+{
+    if (v) snprintf(buf, n, "%s", *v ? "open" : "closed");
+    else   snprintf(buf, n, "n/a");
+}
+
 void fmtOnOff(char* buf, size_t n, bool v)
 {
     snprintf(buf, n, "%s", v ? "on" : "off");
@@ -129,11 +135,15 @@ void printTwin(const struct shell* sh, const char* name,
     char obs[16], des[16], inf[16];
     fmt(obs, sizeof obs, t.observed());
     fmt(des, sizeof des, t.desired());
-    if (t.inFlight().has_value()) fmt(inf, sizeof inf, *t.inFlight());
-    else                          snprintf(inf, sizeof inf, "-");
+    if (t.inFlight().has_value()) {
+        fmt(inf, sizeof inf, *t.inFlight());
+    } else {
+        inf[0] = '-';
+        inf[1] = '\0';
+    }
 
     shell_print(sh,
-        "  %-13s observed=%-10s desired=%-10s inFlight=%-10s "
+        "  %-18s observed=%-10s desired=%-10s inFlight=%-10s "
         "lastSrc=%-6s attr=%s",
         name, obs, des, inf,
         sourceStr(t.lastObservedSource()),
@@ -157,6 +167,7 @@ int CmdStatus(const struct shell* sh, size_t /*argc*/, char** /*argv*/)
     printTwin(sh, "outdoorTemp",  s.outdoorTemp,  fmtTemperatureOpt);
     printTwin(sh, "humidity",     s.humidity,     fmtHumidityOpt);
     printTwin(sh, "reachable",    s.reachable,    fmtBool);
+    printTwin(sh, "refrigerantValve", s.refrigerantValveOpen, fmtOpenClosedOpt);
     return 0;
 }
 

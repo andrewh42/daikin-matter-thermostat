@@ -90,3 +90,10 @@ S21PresentationSyncAdapter::getExtendedProtocolVersion()
     return syncCall<S21Presentation::GetProtocolVersionResult, S21PresentationError>(
             [&](auto cb) { mPresentation.getExtendedProtocolVersion(std::move(cb)); });
 }
+
+tl::expected<S21Presentation::GetUnitStateResult, S21PresentationError>
+S21PresentationSyncAdapter::getUnitState()
+{
+    return syncCall<S21Presentation::GetUnitStateResult, S21PresentationError>(
+            [&](auto cb) { mPresentation.getUnitState(std::move(cb)); });
+}

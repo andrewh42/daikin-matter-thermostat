@@ -72,38 +72,72 @@ ThermostatRunningModeEnum Projector::projectedRunningMode(const LogicalACState& 
     // Power off → no compressor activity, regardless of SystemMode.
     if (!projectedValue(s.onOff)) return ThermostatRunningModeEnum::kOff;
 
-    const auto&   indoorOpt = s.indoorTemp.observed();
-    const int16_t hyst      = mConfig.runningModeHysteresisCentiC;
+    const auto& valveOpt = s.refrigerantValveOpen.observed();
+    return valveOpt.has_value()
+        ? runningModeFromValve(*valveOpt, s)
+        : runningModeFromTemperature(s);
+}
 
-    // Without a temperature reading the hysteresis is unknowable; report
-    // Off rather than guessing. (When mode is kOff the answer is kOff
-    // anyway, so this guard subsumes that case as well.)
-    if (!indoorOpt.has_value()) return ThermostatRunningModeEnum::kOff;
-    const int16_t indoor = *indoorOpt;
+ThermostatRunningModeEnum Projector::runningModeFromValve(bool refrigerantFlowing,
+                                                          const LogicalACState& s) const
+{
+    using RunningMode = ThermostatRunningModeEnum;
+    using SystemMode  = SystemModeEnum;
 
+    if (!refrigerantFlowing) return RunningMode::kOff;
+
+    // Valve open: direction is known for Cool/Heat modes.
+    // Auto mode needs temperature to disambiguate; other modes fall through to kOff.
     switch (s.mode.observed()) {
-    case SystemModeEnum::kOff:
-        return ThermostatRunningModeEnum::kOff;
-    case SystemModeEnum::kCool:
-    case SystemModeEnum::kPrecooling: {
-        const int16_t sp = s.coolSetpoint.observed();
-        return (sp + hyst >= indoor) ? ThermostatRunningModeEnum::kOff
-                                     : ThermostatRunningModeEnum::kCool;
-    }
-    case SystemModeEnum::kHeat:
-    case SystemModeEnum::kEmergencyHeat: {
-        const int16_t sp = s.heatSetpoint.observed();
-        return (sp - hyst <= indoor) ? ThermostatRunningModeEnum::kOff
-                                     : ThermostatRunningModeEnum::kHeat;
-    }
-    case SystemModeEnum::kAuto: {
-        const int16_t sp = s.autoSetpoint.observed();
-        if (indoor > sp + hyst) return ThermostatRunningModeEnum::kCool;
-        if (indoor < sp - hyst) return ThermostatRunningModeEnum::kHeat;
-        return ThermostatRunningModeEnum::kOff;
+    case SystemMode::kCool:
+    case SystemMode::kPrecooling:
+        return RunningMode::kCool;
+    case SystemMode::kHeat:
+    case SystemMode::kEmergencyHeat:
+        return RunningMode::kHeat;
+    case SystemMode::kAuto: {
+        // No hysteresis — compressor activity is hardware-confirmed, not estimated.
+        const auto& indoorOpt = s.indoorTemp.observed();
+        const int16_t sp      = s.autoSetpoint.observed();
+        const bool isHeating  = indoorOpt.has_value() && *indoorOpt < sp;
+        return isHeating ? RunningMode::kHeat : RunningMode::kCool;
     }
     default:
-        return ThermostatRunningModeEnum::kOff;
+        return RunningMode::kOff;
+    }
+}
+
+ThermostatRunningModeEnum Projector::runningModeFromTemperature(const LogicalACState& s) const
+{
+    using RunningMode = ThermostatRunningModeEnum;
+    using SystemMode  = SystemModeEnum;
+
+    const auto& indoorOpt = s.indoorTemp.observed();
+    if (!indoorOpt.has_value()) return RunningMode::kOff;
+    const int16_t indoor = *indoorOpt;
+    const int16_t hyst   = mConfig.runningModeHysteresisCentiC;
+
+    switch (s.mode.observed()) {
+    case SystemMode::kOff:
+        return RunningMode::kOff;
+    case SystemMode::kCool:
+    case SystemMode::kPrecooling: {
+        const int16_t sp = s.coolSetpoint.observed();
+        return (sp + hyst >= indoor) ? RunningMode::kOff : RunningMode::kCool;
+    }
+    case SystemMode::kHeat:
+    case SystemMode::kEmergencyHeat: {
+        const int16_t sp = s.heatSetpoint.observed();
+        return (sp - hyst <= indoor) ? RunningMode::kOff : RunningMode::kHeat;
+    }
+    case SystemMode::kAuto: {
+        const int16_t sp = s.autoSetpoint.observed();
+        if (indoor > sp + hyst) return RunningMode::kCool;
+        if (indoor < sp - hyst) return RunningMode::kHeat;
+        return RunningMode::kOff;
+    }
+    default:
+        return RunningMode::kOff;
     }
 }
 

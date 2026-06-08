@@ -39,6 +39,9 @@ class MockS21PresentationSync : public S21PresentationSync {
     tl::expected<FanMode, S21PresentationError>
         fanModeResult{FanMode::Auto};
 
+    tl::expected<S21Presentation::GetUnitStateResult, S21PresentationError>
+        unitStateResult{S21Presentation::UnitState{false, false, false, false}};
+
     // ── Call counts ───────────────────────────────────────────────────────
 
     int getProtocolVersionCallCount    = 0;
@@ -50,6 +53,7 @@ class MockS21PresentationSync : public S21PresentationSync {
     int getHumidityCallCount           = 0;
     int getCoarseCallCount             = 0;
     int getFanModeCallCount            = 0;
+    int getUnitStateCallCount          = 0;
 
     // ── Last setOperation arguments ───────────────────────────────────────
 
@@ -122,5 +126,12 @@ class MockS21PresentationSync : public S21PresentationSync {
     {
         ++getExtProtocolVersionCallCount;
         return extProtocolVersionResult;
+    }
+
+    tl::expected<S21Presentation::GetUnitStateResult, S21PresentationError>
+    getUnitState() override
+    {
+        ++getUnitStateCallCount;
+        return unitStateResult;
     }
 };

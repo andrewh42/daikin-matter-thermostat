@@ -20,6 +20,7 @@ struct S21State {
     int16_t       indoorTemperatureCelsius      = 0;    // 0.01 °C; also for RunningMode
     int16_t       outdoorTemperatureCelsius     = 0;    // 0.01 °C
     uint8_t       indoorRelativeHumidityPercent = 0;    // 0–100 %; translator ×100 for Matter
+    std::optional<bool> refrigerantValveOpen    = std::nullopt; // from RzB2 bit 0x04; nullopt when unsupported
 };
 
 class MatterSink {

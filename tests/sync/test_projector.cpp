@@ -245,6 +245,99 @@ TEST_CASE("diffProjections emits only the cluster attributes that changed",
             chip::app::Clusters::Thermostat::Attributes::OccupiedCoolingSetpoint::Id);
 }
 
+// ─── refrigerantValveOpen signal ─────────────────────────────────────────────
+
+namespace {
+
+// Apply a valve observation to a copy of the state and return it.
+LogicalACState withValve(LogicalACState s, std::optional<bool> valve)
+{
+    s.refrigerantValveOpen.applyObservation(valve, ObservationSource::Device);
+    return s;
+}
+
+} // namespace
+
+TEST_CASE("RunningMode: valve=false → kOff, overrides temperature heuristic in Cool mode",
+          "[projector][valve]")
+{
+    Projector p(ProjectorConfig{.runningModeHysteresisCentiC = 50});
+    // indoor=2600 vs cool setpoint=2400: heuristic would say kCool (2400+50=2450 < 2600)
+    auto s = withValve(stateAt(SystemModeEnum::kCool, 2000, 2400, 2200, /*indoor=*/2600),
+                       std::optional<bool>{false});
+    REQUIRE(p.projectedRunningMode(s) == ThermostatRunningModeEnum::kOff);
+}
+
+TEST_CASE("RunningMode: valve=false → kOff, overrides temperature heuristic in Heat mode",
+          "[projector][valve]")
+{
+    Projector p(ProjectorConfig{.runningModeHysteresisCentiC = 50});
+    // indoor=1800 vs heat setpoint=2000: heuristic would say kHeat (2000-50=1950 > 1800)
+    auto s = withValve(stateAt(SystemModeEnum::kHeat, 2000, 2400, 2200, /*indoor=*/1800),
+                       std::optional<bool>{false});
+    REQUIRE(p.projectedRunningMode(s) == ThermostatRunningModeEnum::kOff);
+}
+
+TEST_CASE("RunningMode: valve=true → kCool in Cool mode, regardless of temperature",
+          "[projector][valve]")
+{
+    Projector p(ProjectorConfig{.runningModeHysteresisCentiC = 50});
+    // indoor=2300 vs cool setpoint=2400: heuristic would say kOff (2400+50=2450 >= 2300)
+    auto s = withValve(stateAt(SystemModeEnum::kCool, 2000, 2400, 2200, /*indoor=*/2300),
+                       std::optional<bool>{true});
+    REQUIRE(p.projectedRunningMode(s) == ThermostatRunningModeEnum::kCool);
+}
+
+TEST_CASE("RunningMode: valve=true → kHeat in Heat mode, regardless of temperature",
+          "[projector][valve]")
+{
+    Projector p(ProjectorConfig{.runningModeHysteresisCentiC = 50});
+    // indoor=2100 vs heat setpoint=2000: heuristic would say kOff (2000-50=1950 <= 2100)
+    auto s = withValve(stateAt(SystemModeEnum::kHeat, 2000, 2400, 2200, /*indoor=*/2100),
+                       std::optional<bool>{true});
+    REQUIRE(p.projectedRunningMode(s) == ThermostatRunningModeEnum::kHeat);
+}
+
+TEST_CASE("RunningMode: valve=nullopt falls back to temperature heuristic (kCool)",
+          "[projector][valve]")
+{
+    Projector p(ProjectorConfig{.runningModeHysteresisCentiC = 50});
+    // indoor=2600 > 2400+50=2450 → kCool from heuristic
+    auto s = withValve(stateAt(SystemModeEnum::kCool, 2000, 2400, 2200, /*indoor=*/2600),
+                       std::nullopt);
+    REQUIRE(p.projectedRunningMode(s) == ThermostatRunningModeEnum::kCool);
+}
+
+TEST_CASE("RunningMode: valve=nullopt falls back to temperature heuristic (kOff)",
+          "[projector][valve]")
+{
+    Projector p(ProjectorConfig{.runningModeHysteresisCentiC = 50});
+    // indoor=2300 ≤ 2400+50=2450 → kOff from heuristic
+    auto s = withValve(stateAt(SystemModeEnum::kCool, 2000, 2400, 2200, /*indoor=*/2300),
+                       std::nullopt);
+    REQUIRE(p.projectedRunningMode(s) == ThermostatRunningModeEnum::kOff);
+}
+
+TEST_CASE("RunningMode: valve=true in Auto mode still uses temperature heuristic",
+          "[projector][valve]")
+{
+    Projector p(ProjectorConfig{.runningModeHysteresisCentiC = 50});
+    // Valve open but direction unknown in Auto; indoor=2600 > autoSetpoint=2200+50=2250 → kCool
+    auto s = withValve(stateAt(SystemModeEnum::kAuto, 2000, 2400, 2200, /*indoor=*/2600),
+                       std::optional<bool>{true});
+    REQUIRE(p.projectedRunningMode(s) == ThermostatRunningModeEnum::kCool);
+}
+
+TEST_CASE("RunningMode: valve=false in Auto mode → kOff, overrides temperature heuristic",
+          "[projector][valve]")
+{
+    Projector p(ProjectorConfig{.runningModeHysteresisCentiC = 50});
+    // indoor=2600 vs auto setpoint=2200: heuristic would say kCool, but valve=false wins
+    auto s = withValve(stateAt(SystemModeEnum::kAuto, 2000, 2400, 2200, /*indoor=*/2600),
+                       std::optional<bool>{false});
+    REQUIRE(p.projectedRunningMode(s) == ThermostatRunningModeEnum::kOff);
+}
+
 TEST_CASE("diffProjections returns empty when projections are equal",
           "[phase3][projector][diff]")
 {
