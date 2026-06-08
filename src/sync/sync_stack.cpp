@@ -188,6 +188,14 @@ AtomicTxn::Status SyncStack::RollbackAtomic()
     return mAtomic->rollback();
 }
 
+// ─── Raw state snapshot (debug surfaces) ─────────────────────────────────────
+
+LogicalACState SyncStack::Snapshot() const
+{
+    LockGuard g(mLock);
+    return *mState;
+}
+
 // ─── Per-attribute projected reads ───────────────────────────────────────────
 
 namespace {

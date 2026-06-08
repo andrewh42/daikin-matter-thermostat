@@ -104,6 +104,13 @@ public:
     // the CHIP stack lock above is held by the caller anyway, so the only
     // contention is with the S21 work queue.
 
+    /// Value-copy of the underlying twin state, taken under the internal
+    /// lock. For debug surfaces (shell commands, logs) that want the raw
+    /// observed/desired/inFlight triples rather than projected reads. The
+    /// copy lets callers format outside the lock so shell I/O doesn't
+    /// extend the mutex hold that ApplyObservation contends for.
+    LogicalACState Snapshot() const;
+
     bool                          ReadOnOff()                       const;
     SystemModeEnum                ReadSystemMode()                  const;
     int16_t                       ReadOccupiedHeatingSetpoint()     const;
