@@ -46,36 +46,6 @@ target_include_directories(s21_manager_tests PRIVATE
 target_link_libraries(s21_manager_tests PRIVATE Catch2::Catch2WithMain)
 catch_discover_tests(s21_manager_tests)
 
-add_executable(s21_to_matter_translator_tests
-    s21_to_matter_translator/test_s21_to_matter_translator.cpp
-    ${SRC_DIR}/s21_to_matter_translator.cpp
-)
-
-target_include_directories(s21_to_matter_translator_tests PRIVATE
-    ${SRC_DIR}                                                        # s21_to_matter_translator.h
-    ${SRC_DIR}/s21                                                    # s21_presentation.h (for OperatingMode, FanMode)
-    ${CMAKE_SOURCE_DIR}/s21_to_matter_translator/chip_stubs           # stub chip::app::Clusters::Thermostat enums
-    ${CMAKE_SOURCE_DIR}/../third_party                                # tl/expected.hpp
-)
-
-target_link_libraries(s21_to_matter_translator_tests PRIVATE Catch2::Catch2WithMain)
-catch_discover_tests(s21_to_matter_translator_tests)
-
-add_executable(matter_to_s21_translator_tests
-    matter_to_s21_translator/test_matter_to_s21_translator.cpp
-    ${SRC_DIR}/matter_to_s21_translator.cpp
-)
-
-target_include_directories(matter_to_s21_translator_tests PRIVATE
-    ${SRC_DIR}                                                        # matter_to_s21_translator.h, s21_to_matter_translator.h
-    ${SRC_DIR}/s21                                                    # s21_presentation.h (for OperatingMode, FanMode)
-    ${CMAKE_SOURCE_DIR}/matter_to_s21_translator/chip_stubs           # stub chip::app::Clusters::Thermostat enums
-    ${CMAKE_SOURCE_DIR}/../third_party                                # tl/expected.hpp
-)
-
-target_link_libraries(matter_to_s21_translator_tests PRIVATE Catch2::Catch2WithMain)
-catch_discover_tests(matter_to_s21_translator_tests)
-
 add_executable(sync_tests
     sync/test_smoke.cpp
     sync/test_twin_field.cpp
@@ -92,7 +62,6 @@ add_executable(sync_tests
 )
 
 target_include_directories(sync_tests PRIVATE
-    ${SRC_DIR}                                       # for s21_to_matter_translator.h etc.
     ${SRC_DIR}/sync                                  # sync/ production headers
     ${SRC_DIR}/s21                                   # OperatingMode / FanMode enums
     ${CMAKE_SOURCE_DIR}/sync/chip_stubs              # stub chip:: types

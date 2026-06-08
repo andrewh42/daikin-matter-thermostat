@@ -51,8 +51,8 @@
 
 #include "logical_ac_state.h"
 #include "matter_attribute_path.h"
-#include "matter_to_s21_translator.h"
 #include "projector.h"
+#include "s21_command.h"
 #include "s21_observation.h"
 #include "time_source.h"
 #include "write_intent.h"
