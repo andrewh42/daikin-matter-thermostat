@@ -1,21 +1,5 @@
 /*
  * SPDX-License-Identifier: LicenseRef-Apache-2.0
- *
- * BridgeKernel
- * ------------
- * The data-ownership root of the bridge model. Owns:
- *
- *   - LogicalACState   — the canonical air-conditioner state
- *   - MonotonicTimeSource — the time-source the reconciler reads
- *   - Reconciler       — twin policy + diff computation
- *   - AtomicTxn        — Matter AtomicRequest support
- *
- * Mutating methods (`applyIntent`, `applyOperationalObservation`, …)
- * return change records but do **not** lock. The caller (today: SyncCoordinator)
- * is responsible for serialising access. Per-attribute reads are similarly
- * lock-free: caller holds whatever lock is needed.
- *
- * No Matter or Zephyr dependencies. CHIP-free.
  */
 #pragma once
 
@@ -36,6 +20,21 @@
 
 namespace sync {
 
+/**
+ * BridgeKernel is the data-ownership root of the bridge model. Owns:
+ *
+ *   - LogicalACState   — the canonical air-conditioner state
+ *   - MonotonicTimeSource — the time-source the reconciler reads
+ *   - Reconciler       — twin policy + diff computation
+ *   - AtomicTxn        — Matter AtomicRequest support
+ *
+ * Mutating methods (`applyIntent`, `applyOperationalObservation`, …)
+ * return change records but do **not** lock. The caller (today: SyncCoordinator)
+ * is responsible for serialising access. Per-attribute reads are similarly
+ * lock-free: caller holds whatever lock is needed.
+ *
+ * No Matter or Zephyr dependencies. CHIP-free.
+ */
 class BridgeKernel {
 public:
     /// TimeSource is caller-owned (host tests inject ManualTimeSource;

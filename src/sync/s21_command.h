@@ -1,13 +1,5 @@
 /*
  * SPDX-License-Identifier: LicenseRef-Apache-2.0
- *
- * Device-side command type that flows from the bridge's reconciler out to
- * the S21 layer. Sibling of s21_observation.h on the inbound side: this
- * file carries the outbound shape, that one carries the inbound shapes.
- *
- * Defined here in sync/ (next to its primary producer, Reconciler::
- * pendingCommand) rather than under s21/ so callers don't pay an s21/
- * header dependency for a type they only ever construct and compare.
  */
 #pragma once
 
@@ -15,8 +7,20 @@
 
 #include <cstdint>
 
-/// Equality-comparable so reconciler dedup against the last-sent command
-/// is a single `==` check.
+/**
+ * S21OperationCommand is the device-side command type that flows from the
+ * bridge's reconciler out to the S21 layer. Sibling of s21_observation.h
+ * on the inbound side: this file carries the outbound shape, that one
+ * carries the inbound shapes.
+ *
+ * Defined here in sync/ (next to its primary producer,
+ * Reconciler::pendingCommand) rather than under s21/ so callers don't pay
+ * an s21/ header dependency for a type they only ever construct and
+ * compare.
+ *
+ * Equality-comparable so reconciler dedup against the last-sent command
+ * is a single `==` check.
+ */
 struct S21OperationCommand {
     bool          onOff           = false;
     OperatingMode operatingMode   = OperatingMode::Auto;

@@ -1,19 +1,5 @@
 /*
  * SPDX-License-Identifier: LicenseRef-Apache-2.0
- *
- * ThermostatBridgeAttributeAccess
- * -------------------------------
- * AAI for the Thermostat cluster. Installed in place of the SDK's
- * gThermostatAttrAccess after Unregister; see sync-option-4-plan Phase 5.
- *
- * Handles the externalised attributes:
- *   LocalTemperature, OutdoorTemperature, OccupiedHeatingSetpoint,
- *   OccupiedCoolingSetpoint, SystemMode, ThermostatRunningMode,
- *   SetpointChangeSource[Timestamp].
- *
- * Any other attribute (FeatureMap, MinSetpointDeadBand, Presets*,
- * Schedule*, …) falls through to cluster-server / RAM storage by
- * returning CHIP_NO_ERROR without encoding.
  */
 #pragma once
 
@@ -24,6 +10,20 @@ namespace sync { class SyncCoordinator; }
 
 namespace sync_aai {
 
+/**
+ * ThermostatBridgeAttributeAccess is the AAI for the Thermostat cluster.
+ * Installed in place of the SDK's gThermostatAttrAccess after Unregister;
+ * see sync-option-4-plan Phase 5.
+ *
+ * Handles the externalised attributes:
+ *   LocalTemperature, OutdoorTemperature, OccupiedHeatingSetpoint,
+ *   OccupiedCoolingSetpoint, SystemMode, ThermostatRunningMode,
+ *   SetpointChangeSource[Timestamp].
+ *
+ * Any other attribute (FeatureMap, MinSetpointDeadBand, Presets*,
+ * Schedule*, …) falls through to cluster-server / RAM storage by
+ * returning CHIP_NO_ERROR without encoding.
+ */
 class ThermostatBridgeAttributeAccess : public chip::app::AttributeAccessInterface {
 public:
     ThermostatBridgeAttributeAccess()

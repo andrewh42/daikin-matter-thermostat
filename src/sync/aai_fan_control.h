@@ -1,19 +1,5 @@
 /*
  * SPDX-License-Identifier: LicenseRef-Apache-2.0
- *
- * FanControlBridgeAttributeAccess
- * -------------------------------
- * AAI for FanControl's SpeedSetting / FanMode / SpeedCurrent. The
- * cluster server registers no AAI of its own, so plain insertion works.
- *
- * Mapping policy:
- *   - Writes to FanMode (kAuto/kSmart) → speed setting nullopt (Auto)
- *   - Writes to FanMode (kOn) → preserve current speed setting (or set to 3)
- *   - Writes to FanMode (kOff) → bridge translates to OnOff=false via a
- *       separate intent; we ignore here since the OnOff cluster owns that.
- *   - Writes to SpeedSetting (non-null) → speed setting = decoded value
- *   - Writes to SpeedSetting null → speed setting nullopt (Auto)
- *   - Writes to SpeedCurrent → ignored (read-only-ish device telemetry)
  */
 #pragma once
 
@@ -24,6 +10,20 @@ namespace sync { class SyncCoordinator; }
 
 namespace sync_aai {
 
+/**
+ * FanControlBridgeAttributeAccess is the AAI for FanControl's
+ * SpeedSetting / FanMode / SpeedCurrent. The cluster server registers no
+ * AAI of its own, so plain insertion works.
+ *
+ * Mapping policy:
+ *   - Writes to FanMode (kAuto/kSmart) → speed setting nullopt (Auto)
+ *   - Writes to FanMode (kOn) → preserve current speed setting (or set to 3)
+ *   - Writes to FanMode (kOff) → bridge translates to OnOff=false via a
+ *       separate intent; we ignore here since the OnOff cluster owns that.
+ *   - Writes to SpeedSetting (non-null) → speed setting = decoded value
+ *   - Writes to SpeedSetting null → speed setting nullopt (Auto)
+ *   - Writes to SpeedCurrent → ignored (read-only-ish device telemetry)
+ */
 class FanControlBridgeAttributeAccess : public chip::app::AttributeAccessInterface {
 public:
     FanControlBridgeAttributeAccess()

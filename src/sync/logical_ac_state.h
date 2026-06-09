@@ -1,44 +1,5 @@
 /*
  * SPDX-License-Identifier: LicenseRef-Apache-2.0
- *
- * LogicalACState
- * --------------
- * The bridge's canonical AC state. Reconcilable fields (onOff, mode,
- * setpoints, fan) are TwinFields that track observed / desired / in-flight
- * independently, so the reconciler can decide per-attribute whether to
- * send a device command or mark a cluster attribute dirty.
- *
- * Observation-only fields (indoor/outdoor temperature, humidity,
- * refrigerantValveOpen, runningMode, reachable) are SensorFields. Matter
- * never writes them, so the desired/in-flight halves of a twin would be
- * dead weight; SensorField encodes that asymmetry in the type system.
- *
- * Three further things to know:
- *
- *  - Power is its own axis, separate from operating mode. The cluster-side
- *    SystemModeEnum collapses `kOff` into power-off; here, `onOff=false`
- *    means powered down and `mode` retains whatever the controller last
- *    selected (so a mode flip back to On returns to a familiar setting).
- *    This matches the S21 device's internal model (independent on/off and
- *    mode commands).
- *
- *  - The Auto setpoint is the *real* device target temperature in Auto
- *    mode. The Matter cluster exposes a band as (autoSetpoint − δ,
- *    autoSetpoint + δ); the projector synthesises that band on read, and
- *    the reconciler collapses controller edits to either edge back to a
- *    single autoSetpoint update on write. See sync-analysis §4.6 and the
- *    Phase 3 projector tests.
- *
- *  - runningMode captures what the device is currently *doing* (off /
- *    cooling / heating), as opposed to what mode it is *in*. Populated by
- *    the reconciler from a fusion of S21's Auto_Cooling/Auto_Heating
- *    direction signal, refrigerantValveOpen (when reported), and
- *    indoor/setpoint hysteresis. Projects to ThermostatRunningMode at
- *    the AAI boundary.
- *
- * The class is pure data + tiny accessors. The reconciler owns all
- * policy. This keeps the type host-testable without dragging in CHIP types
- * or Zephyr.
  */
 #pragma once
 
@@ -88,6 +49,45 @@ struct LogicalACStateDefaults {
     bool             reachable     = false;
 };
 
+/**
+ * LogicalACState is the bridge's canonical AC state. Reconcilable fields
+ * (onOff, mode, setpoints, fan) are TwinFields that track observed /
+ * desired / in-flight independently, so the reconciler can decide
+ * per-attribute whether to send a device command or mark a cluster
+ * attribute dirty.
+ *
+ * Observation-only fields (indoor/outdoor temperature, humidity,
+ * refrigerantValveOpen, runningMode, reachable) are SensorFields. Matter
+ * never writes them, so the desired/in-flight halves of a twin would be
+ * dead weight; SensorField encodes that asymmetry in the type system.
+ *
+ * Three further things to know:
+ *
+ *  - Power is its own axis, separate from operating mode. The cluster-side
+ *    SystemModeEnum collapses `kOff` into power-off; here, `onOff=false`
+ *    means powered down and `mode` retains whatever the controller last
+ *    selected (so a mode flip back to On returns to a familiar setting).
+ *    This matches the S21 device's internal model (independent on/off and
+ *    mode commands).
+ *
+ *  - The Auto setpoint is the *real* device target temperature in Auto
+ *    mode. The Matter cluster exposes a band as (autoSetpoint − δ,
+ *    autoSetpoint + δ); the projector synthesises that band on read, and
+ *    the reconciler collapses controller edits to either edge back to a
+ *    single autoSetpoint update on write. See sync-analysis §4.6 and the
+ *    Phase 3 projector tests.
+ *
+ *  - runningMode captures what the device is currently *doing* (off /
+ *    cooling / heating), as opposed to what mode it is *in*. Populated by
+ *    the reconciler from a fusion of S21's Auto_Cooling/Auto_Heating
+ *    direction signal, refrigerantValveOpen (when reported), and
+ *    indoor/setpoint hysteresis. Projects to ThermostatRunningMode at
+ *    the AAI boundary.
+ *
+ * The class is pure data + tiny accessors. The reconciler owns all
+ * policy. This keeps the type host-testable without dragging in CHIP
+ * types or Zephyr.
+ */
 struct LogicalACState {
     explicit LogicalACState(const LogicalACStateDefaults& d = {})
         : onOff(d.onOff),

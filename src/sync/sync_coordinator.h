@@ -1,20 +1,5 @@
 /*
  * SPDX-License-Identifier: LicenseRef-Apache-2.0
- *
- * SyncCoordinator — production singleton wrapping the bridge kernel with a
- * Zephyr mutex and a ChangePublisher.
- *
- * Composition:
- *   - BridgeKernel: data ownership and policy (LogicalACState, Reconciler,
- *     AtomicTxn). Lock-free; this class adds the serialisation.
- *   - ChangePublisher: listener registry + dispatch.
- *   - AAIInstaller: CHIP AAI registry plumbing (owned outside SyncCoordinator;
- *     installed/uninstalled in Init/Shutdown).
- *
- * Thread model: one internal mutex serialises every public mutation and
- * every per-attribute Read. Listener callbacks fire outside the mutex so
- * they can grab the CHIP stack lock or schedule onto the Matter event
- * loop without deadlocking.
  */
 #pragma once
 
@@ -38,6 +23,22 @@
 
 namespace sync {
 
+/**
+ * SyncCoordinator is the production singleton wrapping the bridge kernel
+ * with a Zephyr mutex and a ChangePublisher.
+ *
+ * Composition:
+ *   - BridgeKernel: data ownership and policy (LogicalACState, Reconciler,
+ *     AtomicTxn). Lock-free; this class adds the serialisation.
+ *   - ChangePublisher: listener registry + dispatch.
+ *   - AAIInstaller: CHIP AAI registry plumbing (owned outside
+ *     SyncCoordinator; installed/uninstalled in Init/Shutdown).
+ *
+ * Thread model: one internal mutex serialises every public mutation and
+ * every per-attribute Read. Listener callbacks fire outside the mutex so
+ * they can grab the CHIP stack lock or schedule onto the Matter event
+ * loop without deadlocking.
+ */
 class SyncCoordinator {
 public:
     static constexpr size_t kMaxListeners = ChangePublisher::kMaxListeners;

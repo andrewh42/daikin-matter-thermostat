@@ -14,6 +14,12 @@ struct S21DataLinkError: std::runtime_error {
     using std::runtime_error::runtime_error;
 };
 
+/**
+ * S21DataLink is the abstract data-link layer for the Daikin S21 bus.
+ * Encodes outbound payloads into framed S21 packets, transmits them, and
+ * delivers ACK/NAK or response frames back to the caller via the supplied
+ * callback. Implementations choose the transport (UART, mock, etc.).
+ */
 class S21DataLink {
   public:
     virtual ~S21DataLink() = default;

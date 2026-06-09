@@ -1,51 +1,5 @@
 /*
  * SPDX-License-Identifier: LicenseRef-Apache-2.0
- *
- * Reconciler
- * ----------
- * Central policy engine. Three observation/intent entry points:
- *
- *   applyIntent(intent)                       — controller (Matter) write arrived
- *   applyOperationalObservation(opSnapshot)   — every-poll S21 op snapshot
- *   applyEnvironmentalObservation(envSnapshot) — slower-cadence sensor snapshot
- *
- * The first two mutate TwinFields and return an OperationalChange:
- *
- *   - dirtyAttributes: cluster attributes whose projected value differs
- *     after the call. Caller (Phase 7 pump) reports each to subscribers
- *     via MatterReportingAttributeChangeCallback.
- *
- *   - sendCommand: the next S21 setOperation() to dispatch, or nullopt if
- *     nothing should be sent (no dirty desireds, in-flight pending, or
- *     command identical to the last one we sent).
- *
- * applyEnvironmentalObservation mutates only SensorFields and returns an
- * EnvironmentalChange (dirty attributes only — there is no sendCommand
- * because env observations cannot make pendingCommand answer differently).
- *
- * Decisions the reconciler makes:
- *
- *   - Echo suppression / TOCTOU. A stale poll arriving after a controller
- *     write can no longer flip desired back, because the TwinField sees
- *     value == observed and treats it as idempotent. (Tested in Group A.)
- *
- *   - Auto-mode 3-slot shadow. In Auto mode the device's real target is a
- *     single number; the Matter cluster reports it as a band (auto ± δ).
- *     An edge edit recomputes the centre as midpoint(other-edge,
- *     new-edge); a both-edges-equal-delta edit translates the centre by
- *     that delta. (Tested in Group B.)
- *
- *   - Guard window. A Matter intent that arrives within
- *     `deviceWinsWindowMs` of a Device-source observation that disagrees
- *     with the intent is treated as a stale write predating the manual
- *     change and is dropped. (Tested in Group D.)
- *
- *   - Dedup against last sent command. If a recompute would re-emit the
- *     identical S21 command we just sent, suppress it. (Mirrors the
- *     existing AirConditionerManager::mLastSentCommand behaviour.)
- *
- * Threading: not thread-safe by itself. The Phase 7 wrapper owns a
- * single mutex around every call. The reconciler is otherwise pure.
  */
 #pragma once
 
@@ -90,6 +44,52 @@ struct EnvironmentalChange {
     std::vector<LogicalAttribute> dirtyAttributes;
 };
 
+/**
+ * Reconciler is the central policy engine. Three observation/intent entry
+ * points:
+ *
+ *   applyIntent(intent)                       — controller (Matter) write arrived
+ *   applyOperationalObservation(opSnapshot)   — every-poll S21 op snapshot
+ *   applyEnvironmentalObservation(envSnapshot) — slower-cadence sensor snapshot
+ *
+ * The first two mutate TwinFields and return an OperationalChange:
+ *
+ *   - dirtyAttributes: cluster attributes whose projected value differs
+ *     after the call. Caller (Phase 7 pump) reports each to subscribers
+ *     via MatterReportingAttributeChangeCallback.
+ *
+ *   - sendCommand: the next S21 setOperation() to dispatch, or nullopt if
+ *     nothing should be sent (no dirty desireds, in-flight pending, or
+ *     command identical to the last one we sent).
+ *
+ * applyEnvironmentalObservation mutates only SensorFields and returns an
+ * EnvironmentalChange (dirty attributes only — there is no sendCommand
+ * because env observations cannot make pendingCommand answer differently).
+ *
+ * Decisions the reconciler makes:
+ *
+ *   - Echo suppression / TOCTOU. A stale poll arriving after a controller
+ *     write can no longer flip desired back, because the TwinField sees
+ *     value == observed and treats it as idempotent. (Tested in Group A.)
+ *
+ *   - Auto-mode 3-slot shadow. In Auto mode the device's real target is a
+ *     single number; the Matter cluster reports it as a band (auto ± δ).
+ *     An edge edit recomputes the centre as midpoint(other-edge,
+ *     new-edge); a both-edges-equal-delta edit translates the centre by
+ *     that delta. (Tested in Group B.)
+ *
+ *   - Guard window. A Matter intent that arrives within
+ *     `deviceWinsWindowMs` of a Device-source observation that disagrees
+ *     with the intent is treated as a stale write predating the manual
+ *     change and is dropped. (Tested in Group D.)
+ *
+ *   - Dedup against last sent command. If a recompute would re-emit the
+ *     identical S21 command we just sent, suppress it. (Mirrors the
+ *     existing AirConditionerManager::mLastSentCommand behaviour.)
+ *
+ * Threading: not thread-safe by itself. The Phase 7 wrapper owns a
+ * single mutex around every call. The reconciler is otherwise pure.
+ */
 class Reconciler {
 public:
     Reconciler(LogicalACState& state, TimeSource& time, ReconcilerConfig config = {});

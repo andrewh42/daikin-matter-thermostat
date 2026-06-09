@@ -52,6 +52,13 @@ Open this repo in Visual Studio Code and follow these steps:
       -DEXTRA_CONF_FILE=prj_release.conf
     ```
 
+    For the Seeed XIAO nRF54L15 with an external antenna attached:
+    ```sh
+    west build -p -d build-xiao -b xiao_nrf54l15/nrf54l15/cpuapp -- \
+      -DFILE_SUFFIX=internal \
+      -DEXTRA_DTC_OVERLAY_FILE=xiao-external-antenna.overlay \
+      -DEXTRA_CONF_FILE=prj_release.conf
+
     For the Nordic nRF54L15 DK:
     ```sh
     west build -p -d build-nrf54l15dk -b nrf54l15dk/nrf54l15/cpuapp -- \

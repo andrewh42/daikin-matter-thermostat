@@ -1,8 +1,7 @@
 /*
  * SPDX-License-Identifier: LicenseRef-Apache-2.0
  */
-
- #pragma once
+#pragma once
 
 #include <app/AttributeAccessInterface.h>
 #include <app-common/zap-generated/cluster-objects.h>
@@ -11,10 +10,12 @@ namespace sync { class SyncCoordinator; }
 
 namespace sync_aai {
 
-/// Matter AttributeAccessInterface for the RelativeHumidityMeasurement cluster's `MeasuredValue`
-/// attribute. The cluster server does not register its own AAI, so a
-/// plain subclass plugs in without collision. Read-only: the cluster
-/// is sensor-output only.
+/**
+ * HumidityBridgeAttributeAccess is the Matter AttributeAccessInterface
+ * for the RelativeHumidityMeasurement cluster's `MeasuredValue` attribute.
+ * The cluster server does not register its own AAI, so a plain subclass
+ * plugs in without collision. Read-only: the cluster is sensor-output only.
+ */
 class HumidityBridgeAttributeAccess : public chip::app::AttributeAccessInterface {
 public:
     HumidityBridgeAttributeAccess()

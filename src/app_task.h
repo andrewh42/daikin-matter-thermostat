@@ -17,6 +17,12 @@ enum class TemperatureButtonAction : uint8_t {
     Released
 };
 
+/**
+ * AppTask is the top-level application singleton. Brings up the Matter
+ * stack, the S21 transport, the temperature sensor manager, and the
+ * AirConditionerManager during StartApp(), and routes board-level button
+ * events to the appropriate handlers.
+ */
 class AppTask {
   public:
     static AppTask& Instance()

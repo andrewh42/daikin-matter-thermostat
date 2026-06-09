@@ -1,11 +1,5 @@
 /*
  * SPDX-License-Identifier: LicenseRef-Apache-2.0
- *
- * OnOffBridgeAttributeAccess
- * --------------------------
- * AAI for the OnOff cluster's `OnOff` attribute. The OnOff cluster server
- * does not register its own AAI, so a plain subclass plugs in without
- * collision.
  */
 #pragma once
 
@@ -16,6 +10,11 @@ namespace sync { class SyncCoordinator; }
 
 namespace sync_aai {
 
+/**
+ * OnOffBridgeAttributeAccess is the AAI for the OnOff cluster's `OnOff`
+ * attribute. The OnOff cluster server does not register its own AAI, so a
+ * plain subclass plugs in without collision.
+ */
 class OnOffBridgeAttributeAccess : public chip::app::AttributeAccessInterface {
 public:
     OnOffBridgeAttributeAccess()

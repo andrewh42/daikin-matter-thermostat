@@ -1,9 +1,26 @@
 /*
  * SPDX-License-Identifier: LicenseRef-Apache-2.0
- *
- * AtomicTxn — Matter Thermostat AtomicRequest support
- * ---------------------------------------------------
- * Buffers WriteIntents that arrive between AtomicRequest{Begin} and
+ */
+#pragma once
+
+#include "reconciler.h"
+#include "time_source.h"
+#include "write_intent.h"
+
+#include <vector>
+
+namespace sync {
+
+/// Defined outside AtomicTxn so the constructor can default-initialise it
+/// without falling foul of C++17's "complete class context" rule on the
+/// outer class.
+struct AtomicTxnConfig {
+    int64_t timeoutMs = 5'000;
+};
+
+/**
+ * AtomicTxn provides Matter Thermostat AtomicRequest support. Buffers
+ * WriteIntents that arrive between AtomicRequest{Begin} and
  * AtomicRequest{Commit}, and applies them to the reconciler in a single
  * batch. Outside an open transaction, write() passes intents straight
  * through to the reconciler so the AAI path can be uniform.
@@ -25,23 +42,6 @@
  * Thread-safety: same as Reconciler — none on its own; the Phase 7
  * wrapper owns the mutex.
  */
-#pragma once
-
-#include "reconciler.h"
-#include "time_source.h"
-#include "write_intent.h"
-
-#include <vector>
-
-namespace sync {
-
-/// Defined outside AtomicTxn so the constructor can default-initialise it
-/// without falling foul of C++17's "complete class context" rule on the
-/// outer class.
-struct AtomicTxnConfig {
-    int64_t timeoutMs = 5'000;
-};
-
 class AtomicTxn {
 public:
     enum class Status {

@@ -1,15 +1,5 @@
 /*
  * SPDX-License-Identifier: LicenseRef-Apache-2.0
- *
- * aai_translation
- * ---------------
- * Pure-function translation tables between sync/ domain types and the CHIP
- * cluster types they map to at the AAI boundary. Lives in inline functions
- * so the AAI Read/Write switches stay one-line-per-attribute.
- *
- * Host-testable: only depends on `<app-common/zap-generated/attributes/Accessors.h>`,
- * which `tests/sync/chip_stubs/` mirrors. The boundary tables are pinned by
- * test_aai_translation.cpp.
  */
 #pragma once
 
@@ -30,6 +20,16 @@
 #include <optional>
 #include <utility>
 
+/**
+ * sync_aai holds the pure-function translation tables between sync/
+ * domain types and the CHIP cluster types they map to at the AAI
+ * boundary. Lives in inline functions so the AAI Read/Write switches
+ * stay one-line-per-attribute.
+ *
+ * Host-testable: only depends on `<app-common/zap-generated/attributes/Accessors.h>`,
+ * which `tests/sync/chip_stubs/` mirrors. The boundary tables are pinned
+ * by test_aai_translation.cpp.
+ */
 namespace sync_aai {
 
 // ─── SystemMode ↔ (power, OperationalMode) ──────────────────────────────────

@@ -1,40 +1,5 @@
 /*
  * SPDX-License-Identifier: LicenseRef-Apache-2.0
- *
- * Projector
- * ---------
- * Pure function: LogicalACState → domain values that subscribers will see.
- *
- * Two consumers:
- *
- *   - The reconciler diffs project(before) vs project(after) and emits a
- *     vector<LogicalAttribute> naming what changed.
- *
- *   - The AAI Read paths call per-attribute projectors directly and
- *     translate the domain value to CHIP at encode time
- *     (see aai_translation.h).
- *
- * Projector outputs are *domain* types throughout (`OperationalMode`,
- * `RunningMode`, `ObservationSource`, `FanSpeed`, `std::optional<T>`):
- * Matter cluster enums and `chip::app::DataModel::Nullable<T>` appear only
- * on the AAI side of the wall.
- *
- * Auto-mode band synthesis:
- *
- *   - In Auto, occupiedHeatingSetpoint = autoSetpoint − δ
- *                occupiedCoolingSetpoint = autoSetpoint + δ
- *
- *   - In Cool/Heat, the band edge for the *other* side reports its own
- *     shadow (so a mode flip back lands somewhere familiar) rather than a
- *     synthesised δ-band.
- *
- * RunningMode comes from state.runningMode (fused at observation time by
- * the reconciler), with a !onOff override.
- *
- * Projections read TwinField::observed() (the "faithful UI" policy): a
- * controller's view tracks what the device has actually acknowledged, not
- * what we hope it will become. desired() leaks would confuse subscribers
- * during the inFlight window.
  */
 #pragma once
 
@@ -80,6 +45,41 @@ struct ProjectedClusterState {
     bool                          reachable;
 };
 
+/**
+ * Projector is a pure function from LogicalACState to the domain values
+ * that subscribers will see.
+ *
+ * Two consumers:
+ *
+ *   - The reconciler diffs project(before) vs project(after) and emits a
+ *     vector<LogicalAttribute> naming what changed.
+ *
+ *   - The AAI Read paths call per-attribute projectors directly and
+ *     translate the domain value to CHIP at encode time
+ *     (see aai_translation.h).
+ *
+ * Projector outputs are *domain* types throughout (`OperationalMode`,
+ * `RunningMode`, `ObservationSource`, `FanSpeed`, `std::optional<T>`):
+ * Matter cluster enums and `chip::app::DataModel::Nullable<T>` appear only
+ * on the AAI side of the wall.
+ *
+ * Auto-mode band synthesis:
+ *
+ *   - In Auto, occupiedHeatingSetpoint = autoSetpoint − δ
+ *                occupiedCoolingSetpoint = autoSetpoint + δ
+ *
+ *   - In Cool/Heat, the band edge for the *other* side reports its own
+ *     shadow (so a mode flip back lands somewhere familiar) rather than a
+ *     synthesised δ-band.
+ *
+ * RunningMode comes from state.runningMode (fused at observation time by
+ * the reconciler), with a !onOff override.
+ *
+ * Projections read TwinField::observed() (the "faithful UI" policy): a
+ * controller's view tracks what the device has actually acknowledged, not
+ * what we hope it will become. desired() leaks would confuse subscribers
+ * during the inFlight window.
+ */
 class Projector {
 public:
     explicit Projector(ProjectorConfig cfg = {}) : mConfig(cfg) {}

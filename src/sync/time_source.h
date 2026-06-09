@@ -1,12 +1,5 @@
 /*
  * SPDX-License-Identifier: LicenseRef-Apache-2.0
- *
- * TimeSource
- * ----------
- * The reconciler and atomic buffer make policy decisions that depend on
- * elapsed time (guard windows, atomic-transaction timeouts). Injecting a
- * TimeSource keeps that code host-testable: production wires the Zephyr
- * monotonic clock, tests wire a manual clock they can step.
  */
 #pragma once
 
@@ -14,6 +7,13 @@
 
 namespace sync {
 
+/**
+ * TimeSource is the time-injection seam for the bridge. The reconciler and
+ * atomic buffer make policy decisions that depend on elapsed time (guard
+ * windows, atomic-transaction timeouts). Injecting a TimeSource keeps that
+ * code host-testable: production wires the Zephyr monotonic clock, tests
+ * wire a manual clock they can step.
+ */
 class TimeSource {
 public:
     virtual ~TimeSource() = default;

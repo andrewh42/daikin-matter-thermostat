@@ -1,10 +1,19 @@
 /*
  * SPDX-License-Identifier: LicenseRef-Apache-2.0
- *
- * ChangePublisher
- * ---------------
- * Listener registry and dispatch helper for the bridge's dirty-attribute
- * and command-pump streams.
+ */
+#pragma once
+
+#include "changed_attributes_listener.h"
+#include "logical_attribute.h"
+
+#include <cstddef>
+#include <vector>
+
+namespace sync {
+
+/**
+ * ChangePublisher is the listener registry and dispatch helper for the
+ * bridge's dirty-attribute and command-pump streams.
  *
  * The publisher itself does not own a lock: registration calls
  * (`Add`/`Remove`) and `snapshot()` are read/mutated only under
@@ -17,16 +26,6 @@
  * CHIP-free: errors are returned as a small `Status` enum; SyncCoordinator
  * adapts at its public surface.
  */
-#pragma once
-
-#include "changed_attributes_listener.h"
-#include "logical_attribute.h"
-
-#include <cstddef>
-#include <vector>
-
-namespace sync {
-
 class ChangePublisher {
 public:
     /// Maximum number of listeners that may be registered at once. Sized

@@ -1,21 +1,5 @@
 /*
  * SPDX-License-Identifier: LicenseRef-Apache-2.0
- *
- * TwinField<T>
- * ------------
- * Single-value algebra for a piece of bridge state with three views:
- *
- *   - observed:  what the device most recently reported
- *   - desired:   what the controller (or boot defaults) wants
- *   - inFlight:  the value the bridge has just sent to the device and is
- *                waiting to see echoed back, if any
- *
- * The point is to make echo-suppression and external-override decisions
- * mechanically obvious. Callers don't reason about "is this poll stale" —
- * they call applyObservation() and the algebra does the right thing.
- *
- * Designed to be header-only and free of CHIP/Zephyr dependencies so the
- * reconciler that owns these fields stays host-testable.
  */
 #pragma once
 
@@ -29,6 +13,22 @@ namespace sync {
 /// have to qualify by instantiation).
 enum class ObservationSource { Boot, Device, Matter };
 
+/**
+ * TwinField<T> is a single-value algebra for a piece of bridge state with
+ * three views:
+ *
+ *   - observed:  what the device most recently reported
+ *   - desired:   what the controller (or boot defaults) wants
+ *   - inFlight:  the value the bridge has just sent to the device and is
+ *                waiting to see echoed back, if any
+ *
+ * The point is to make echo-suppression and external-override decisions
+ * mechanically obvious. Callers don't reason about "is this poll stale" —
+ * they call applyObservation() and the algebra does the right thing.
+ *
+ * Designed to be header-only and free of CHIP/Zephyr dependencies so the
+ * reconciler that owns these fields stays host-testable.
+ */
 template <typename T>
 class TwinField {
 public:

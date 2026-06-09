@@ -1,10 +1,5 @@
 /*
  * SPDX-License-Identifier: LicenseRef-Apache-2.0
- *
- * Compile-time TX/RX GPIO pin numbers extracted from the 's21uart'
- * device-tree alias.  Works for any board whose s21uart pinctrl-0 state
- * contains NRF_PSEL(UART_TX, ...) and NRF_PSEL(UART_RX, ...) entries,
- * regardless of how the child groups are named.
  */
 #pragma once
 
@@ -25,6 +20,12 @@
 
 #define _S21_PINCTRL_DEFAULT DT_PHANDLE_BY_IDX(DT_ALIAS(s21uart), pinctrl_0, 0)
 
+/**
+ * s21_pinconfig extracts compile-time TX/RX GPIO pin numbers from the
+ * 's21uart' device-tree alias. Works for any board whose s21uart
+ * pinctrl-0 state contains NRF_PSEL(UART_TX, ...) and NRF_PSEL(UART_RX,
+ * ...) entries, regardless of how the child groups are named.
+ */
 namespace s21_pinconfig {
 
 static constexpr uint32_t kPsels[] = {DT_FOREACH_CHILD(_S21_PINCTRL_DEFAULT, _S21_EMIT_GROUP)};
