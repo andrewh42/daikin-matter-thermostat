@@ -32,12 +32,78 @@ K_THREAD_STACK_DEFINE(sS21WorkQueueStack, 2048);
 
 namespace {
 
-const struct gpio_dt_spec led0 = GPIO_DT_SPEC_GET(DT_ALIAS(led0), gpios);
-
 uint8_t ReturnCompleteValue(int16_t v)  { return static_cast<uint8_t>(v / 100); }
 uint8_t ReturnRemainderValue(int16_t v) { return static_cast<uint8_t>((v % 100 + 5) / 10); }
 
 } // namespace
+
+// ─── PowerIndicatorListener: LED0 ownership ─────────────────────────────────
+
+const struct gpio_dt_spec
+AirConditionerManager::PowerIndicator::sLed0 =
+    GPIO_DT_SPEC_GET(DT_ALIAS(led0), gpios);
+
+int AirConditionerManager::PowerIndicator::Init(bool initialOnOff)
+{
+    if (!gpio_is_ready_dt(&sLed0)) {
+        LOG_ERR("LED0 GPIO device is not ready");
+        return -ENODEV;
+    }
+    const int flags = initialOnOff ? GPIO_OUTPUT_ACTIVE : GPIO_OUTPUT_INACTIVE;
+    const int rc = gpio_pin_configure_dt(&sLed0, flags);
+    if (rc < 0) {
+        LOG_ERR("Failed to configure LED0 GPIO pin (%d)", rc);
+        return rc;
+    }
+    return 0;
+}
+
+void AirConditionerManager::PowerIndicator::Set(bool onOff)
+{
+    gpio_pin_set_dt(&sLed0, onOff);
+}
+
+void AirConditionerManager::PowerIndicator::OnChangedAttributes(
+    const std::vector<sync::MatterAttributePath>& paths)
+{
+    for (const auto& p : paths) {
+        if (p.cluster   == chip::app::Clusters::OnOff::Id &&
+            p.attribute == chip::app::Clusters::OnOff::Attributes::OnOff::Id) {
+            // Both gpio_pin_set_dt and ReadOnOff are thread-safe and
+            // don't touch the CHIP stack lock, so this runs synchronously
+            // on whichever thread dispatched the listener.
+            Set(mOwner.mSyncStack->Reader().ReadOnOff());
+            return;
+        }
+    }
+}
+
+// ─── MatterReportListener: dirty-path queue + drain ─────────────────────────
+
+void AirConditionerManager::MatterAttributeChangeReporter::OnChangedAttributes(
+    const std::vector<sync::MatterAttributePath>& paths)
+{
+    k_mutex_lock(&mQueueMutex, K_FOREVER);
+    mQueue.insert(mQueue.end(), paths.begin(), paths.end());
+    k_mutex_unlock(&mQueueMutex);
+
+    Nrf::PostTask([this] { DrainOnMatterEventLoop(); });
+}
+
+void AirConditionerManager::MatterAttributeChangeReporter::DrainOnMatterEventLoop()
+{
+    std::vector<sync::MatterAttributePath> local;
+    k_mutex_lock(&mQueueMutex, K_FOREVER);
+    local.swap(mQueue);
+    k_mutex_unlock(&mQueueMutex);
+    if (local.empty()) return;
+
+    PlatformMgr().LockChipStack();
+    for (const auto& p : local) {
+        MatterReportingAttributeChangeCallback(p.endpoint, p.cluster, p.attribute);
+    }
+    PlatformMgr().UnlockChipStack();
+}
 
 // ─── Init / lifecycle ────────────────────────────────────────────────────────
 
@@ -46,7 +112,12 @@ CHIP_ERROR AirConditionerManager::Init(S21Manager& s21Manager, sync::SyncStack& 
     mS21Manager = &s21Manager;
     mSyncStack  = &syncStack;
 
-    ReturnErrorOnFailure(InitLed());
+    // Configure LED0 and drive it to the current OnOff before registering
+    // the listener — a dispatch arriving before Init returns would
+    // otherwise fire gpio_pin_set_dt on an unconfigured pin.
+    if (mPowerIndicator.Init(mSyncStack->Reader().ReadOnOff()) != 0) {
+        return CHIP_ERROR_INTERNAL;
+    }
 
     k_work_queue_start(&mS21WorkQueue, sS21WorkQueueStack,
                        K_THREAD_STACK_SIZEOF(sS21WorkQueueStack),
@@ -56,9 +127,11 @@ CHIP_ERROR AirConditionerManager::Init(S21Manager& s21Manager, sync::SyncStack& 
     k_work_init_delayable(&mCommandWork,   CommandWorkHandler);
 
     // Wire up SyncStack so AAI Writes and Polls schedule the right
-    // follow-up work. Both hooks are static fns dispatching on Instance().
-    mSyncStack->SetCommandPumpHook(&AirConditionerManager::ScheduleS21CommandHook);
-    mSyncStack->SetDirtyReporterHook(&AirConditionerManager::ReportDirtyAttributesHook);
+    // follow-up work. The pump handler is a static fn; the two listeners
+    // are nested-class members that reach mOwner for context.
+    mSyncStack->SetCommandPumpHandler(&AirConditionerManager::ScheduleS21CommandHandler);
+    ReturnErrorOnFailure(mSyncStack->AddChangedAttributesListener(&mMatterAttributeChangeReporter));
+    ReturnErrorOnFailure(mSyncStack->AddChangedAttributesListener(&mPowerIndicator));
 
     if (mS21Manager->Init() == 0) {
         k_work_reschedule_for_queue(&mS21WorkQueue, &mPollWork, K_NO_WAIT);
@@ -68,31 +141,8 @@ CHIP_ERROR AirConditionerManager::Init(S21Manager& s21Manager, sync::SyncStack& 
                                     K_MSEC(mInitRetryIntervalMs));
     }
 
-    // Sync the LED to current OnOff (boot-time read via SyncStack which
-    // returns the boot defaults until the first poll lands).
-    UpdatePowerIndicator(mSyncStack->Reader().ReadOnOff());
-
     LOG_DBG("AirConditionerManager initialised");
     return CHIP_NO_ERROR;
-}
-
-CHIP_ERROR AirConditionerManager::InitLed()
-{
-    if (!gpio_is_ready_dt(&led0)) {
-        LOG_ERR("LED0 GPIO device is not ready");
-        return CHIP_ERROR_INTERNAL;
-    }
-    int ret = gpio_pin_configure_dt(&led0, GPIO_OUTPUT_INACTIVE);
-    if (ret < 0) {
-        LOG_ERR("Failed to configure LED0 GPIO pin, error: %d", ret);
-        return CHIP_ERROR_INTERNAL;
-    }
-    return CHIP_NO_ERROR;
-}
-
-void AirConditionerManager::UpdatePowerIndicator(bool onOff)
-{
-    gpio_pin_set_dt(&led0, onOff);
 }
 
 // ─── Poll loop (S21 work queue) ──────────────────────────────────────────────
@@ -209,7 +259,7 @@ void AirConditionerManager::InitRetryWorkHandler(k_work* work)
 
 // ─── Command pump (S21 work queue) ───────────────────────────────────────────
 
-void AirConditionerManager::ScheduleS21CommandHook()
+void AirConditionerManager::ScheduleS21CommandHandler()
 {
     auto& self = Instance();
     k_work_reschedule_for_queue(&self.mS21WorkQueue, &self.mCommandWork,
@@ -237,59 +287,6 @@ void AirConditionerManager::CommandWorkHandler(k_work* work)
     } else {
         LOG_WRN("setOperation failed: %s", result.error().message);
         self.mSyncStack->OnCommandFailed();
-    }
-}
-
-// ─── Dirty-attribute report flush (Matter event loop) ────────────────────────
-//
-// Nrf::PostTask only accepts trivially-copyable functors (no std::vector
-// captures). We bridge with a tiny mutex-guarded queue: the hook appends
-// paths and schedules a no-capture lambda that drains the queue on the
-// Matter event loop under the CHIP stack lock. Both threads (Matter
-// event loop and S21 work queue) can enqueue safely.
-
-namespace {
-
-K_MUTEX_DEFINE(sDirtyQueueMutex);
-std::vector<sync::MatterAttributePath> sDirtyQueue;
-
-void DrainDirtyQueue()
-{
-    std::vector<sync::MatterAttributePath> local;
-    k_mutex_lock(&sDirtyQueueMutex, K_FOREVER);
-    local.swap(sDirtyQueue);
-    k_mutex_unlock(&sDirtyQueueMutex);
-    if (local.empty()) return;
-
-    PlatformMgr().LockChipStack();
-    for (const auto& p : local) {
-        MatterReportingAttributeChangeCallback(p.endpoint, p.cluster, p.attribute);
-    }
-    PlatformMgr().UnlockChipStack();
-}
-
-} // namespace
-
-void AirConditionerManager::ReportDirtyAttributesHook(
-    const std::vector<sync::MatterAttributePath>& paths)
-{
-    k_mutex_lock(&sDirtyQueueMutex, K_FOREVER);
-    sDirtyQueue.insert(sDirtyQueue.end(), paths.begin(), paths.end());
-    k_mutex_unlock(&sDirtyQueueMutex);
-
-    Nrf::PostTask([] { DrainDirtyQueue(); }); // trivially-copyable: no captures
-
-    // OnOff side effect: keep LED0 in sync with the bridge's view of power
-    // state on every transition, whether the change came from a controller
-    // (AAI Write) or a poll observation. Read the projected value rather
-    // than the raw write payload so we always show what controllers see.
-    for (const auto& p : paths) {
-        if (p.cluster   == chip::app::Clusters::OnOff::Id &&
-            p.attribute == chip::app::Clusters::OnOff::Attributes::OnOff::Id) {
-            auto& self = Instance();
-            self.UpdatePowerIndicator(self.mSyncStack->Reader().ReadOnOff());
-            break;
-        }
     }
 }
 

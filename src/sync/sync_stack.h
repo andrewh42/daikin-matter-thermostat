@@ -18,6 +18,7 @@
 #pragma once
 
 #include "atomic_buffer.h"
+#include "changed_attributes_listener.h"
 #include "logical_ac_state.h"
 #include "matter_attribute_path.h"
 #include "monotonic_time_source.h"
@@ -37,6 +38,11 @@ namespace sync {
 
 class SyncStack {
 public:
+    /// Maximum number of ChangedAttributesListeners that may be registered
+    /// at once. Sized for: Matter reporter, LED indicator, optional shell
+    /// observer, optional metrics. Bump if you need more.
+    static constexpr size_t kMaxListeners = 4;
+
     static SyncStack& Instance();
 
     /// One-time construction of the LogicalACState / Reconciler / AtomicTxn
@@ -84,19 +90,23 @@ public:
     /// The next S21 command to send, if any. Called by the Phase 7 pump.
     std::optional<S21OperationCommand> PendingCommand() const;
 
-    /// Hook called from inside ApplyIntent and ApplyObservation when those
-    /// produce a pendingCommand. The Phase 7 pump uses it to wake itself
-    /// without us needing to know about Zephyr work queues here.
-    using CommandPumpHook = void (*)();
-    void SetCommandPumpHook(CommandPumpHook hook) { mPumpHook = hook; }
+    /// Single-consumer pump signal. Called from inside ApplyIntent and
+    /// ApplyObservation when those produce a pendingCommand. The pump uses
+    /// it to wake itself without us needing to know about Zephyr work
+    /// queues here. Pass nullptr to clear.
+    using CommandPumpHandler = void (*)();
+    void SetCommandPumpHandler(CommandPumpHandler handler) { mPumpHandler = handler; }
 
-    /// Hook called from inside ApplyIntent and ApplyObservation when the
-    /// dirty-attribute set is non-empty. The pump posts each path to
-    /// MatterReportingAttributeChangeCallback under the CHIP stack lock.
-    /// Kept separate from CommandPumpHook so the two consumers run on
-    /// different threads (S21 work queue vs. Matter event loop).
-    using DirtyReporterHook = void (*)(const std::vector<MatterAttributePath>&);
-    void SetDirtyReporterHook(DirtyReporterHook hook) { mDirtyHook = hook; }
+    /// Register/deregister a ChangedAttributesListener. Listeners are
+    /// invoked outside SyncStack's mutex after every mutation that
+    /// produces a non-empty dirty-attribute set; the order of invocation
+    /// is registration order.
+    ///
+    /// Add is idempotent for the same pointer. Returns CHIP_ERROR_NO_MEMORY
+    /// if the listener table is full (capacity == kMaxListeners). Remove
+    /// is a silent no-op for an unknown pointer.
+    CHIP_ERROR AddChangedAttributesListener(ChangedAttributesListener* listener);
+    void       RemoveChangedAttributesListener(ChangedAttributesListener* listener);
 
     // ─── Atomic-request transaction (Matter AtomicRequest command) ───────────
 
@@ -139,11 +149,11 @@ private:
         k_mutex& mM;
     };
 
-    chip::EndpointId  mEndpoint{1};
-    bool              mInitialised{false};
-    mutable k_mutex   mLock;
-    CommandPumpHook   mPumpHook{nullptr};
-    DirtyReporterHook mDirtyHook{nullptr};
+    chip::EndpointId   mEndpoint{1};
+    bool               mInitialised{false};
+    mutable k_mutex    mLock;
+    CommandPumpHandler mPumpHandler{nullptr};
+    std::vector<ChangedAttributesListener*> mListeners; // reserved in Init()
 
     // std::optional defers construction to Init() because the production
     // pieces (Reconciler, AtomicTxn) hold references that need to bind to

@@ -12,6 +12,8 @@
 #include <app/clusters/thermostat-server/thermostat-server.h>
 #include <zephyr/logging/log.h>
 
+#include <algorithm>
+
 LOG_MODULE_REGISTER(sync_stack, LOG_LEVEL_DBG);
 
 namespace sync {
@@ -72,6 +74,7 @@ CHIP_ERROR SyncStack::Init(chip::EndpointId endpoint)
 
     mEndpoint = endpoint;
     k_mutex_init(&mLock);
+    mListeners.reserve(kMaxListeners); // size cap is contract; reserve avoids realloc
 
     mState.emplace();                                 // boot defaults
     mTime.emplace();
@@ -115,22 +118,68 @@ void SyncStack::Shutdown()
     mReconciler.reset();
     mTime.reset();
     mState.reset();
+    mListeners.clear();
+    mPumpHandler = nullptr;
     mInitialised = false;
+}
+
+// ─── Change-listener registration ────────────────────────────────────────────
+
+CHIP_ERROR SyncStack::AddChangedAttributesListener(ChangedAttributesListener* listener)
+{
+    if (listener == nullptr) return CHIP_ERROR_INVALID_ARGUMENT;
+    LockGuard g(mLock);
+    if (std::find(mListeners.begin(), mListeners.end(), listener) != mListeners.end()) {
+        return CHIP_NO_ERROR; // idempotent
+    }
+    if (mListeners.size() >= kMaxListeners) return CHIP_ERROR_NO_MEMORY;
+    mListeners.push_back(listener); // capacity was reserved in Init(), no realloc
+    return CHIP_NO_ERROR;
+}
+
+void SyncStack::RemoveChangedAttributesListener(ChangedAttributesListener* listener)
+{
+    if (listener == nullptr) return;
+    LockGuard g(mLock);
+    mListeners.erase(
+        std::remove(mListeners.begin(), mListeners.end(), listener),
+        mListeners.end());
 }
 
 // ─── Mutating entry points ────────────────────────────────────────────────────
 
+namespace {
+
+// Snapshot the listener vector under the lock so the dispatch loop runs
+// outside the lock with a stable view, even if Add/Remove is racing on
+// another thread. Stack-allocated; capped at kMaxListeners.
+struct ListenerSnapshot {
+    ChangedAttributesListener* slots[SyncStack::kMaxListeners];
+    size_t count{0};
+
+    void notify(const std::vector<MatterAttributePath>& paths) const
+    {
+        for (size_t i = 0; i < count; ++i) slots[i]->OnChangedAttributes(paths);
+    }
+};
+
+} // namespace
+
 OperationalChange SyncStack::ApplyIntent(const WriteIntent& intent)
 {
     OperationalChange change;
+    ListenerSnapshot  snap;
     {
         LockGuard g(mLock);
         change = mReconciler->applyIntent(intent);
+        snap.count = mListeners.size();
+        std::copy(mListeners.begin(), mListeners.end(), snap.slots);
     }
-    // Hooks fire outside the lock — they may schedule work or grab the
-    // CHIP stack lock, both of which would deadlock if held under mLock.
-    if (mDirtyHook && !change.dirtyAttributes.empty()) mDirtyHook(change.dirtyAttributes);
-    if (mPumpHook  && change.sendCommand.has_value()) mPumpHook();
+    // Notifications fire outside the lock — listeners may schedule work
+    // or grab the CHIP stack lock, both of which would deadlock if held
+    // under mLock.
+    if (!change.dirtyAttributes.empty()) snap.notify(change.dirtyAttributes);
+    if (mPumpHandler && change.sendCommand.has_value()) mPumpHandler();
     return change;
 }
 
@@ -138,12 +187,15 @@ OperationalChange SyncStack::ApplyOperationalObservation(
     const S21OperationalObservation& obs)
 {
     OperationalChange change;
+    ListenerSnapshot  snap;
     {
         LockGuard g(mLock);
         change = mReconciler->applyOperationalObservation(obs);
+        snap.count = mListeners.size();
+        std::copy(mListeners.begin(), mListeners.end(), snap.slots);
     }
-    if (mDirtyHook && !change.dirtyAttributes.empty()) mDirtyHook(change.dirtyAttributes);
-    if (mPumpHook  && change.sendCommand.has_value()) mPumpHook();
+    if (!change.dirtyAttributes.empty()) snap.notify(change.dirtyAttributes);
+    if (mPumpHandler && change.sendCommand.has_value()) mPumpHandler();
     return change;
 }
 
@@ -151,11 +203,14 @@ EnvironmentalChange SyncStack::ApplyEnvironmentalObservation(
     const S21EnvironmentalObservation& obs)
 {
     EnvironmentalChange change;
+    ListenerSnapshot    snap;
     {
         LockGuard g(mLock);
         change = mReconciler->applyEnvironmentalObservation(obs);
+        snap.count = mListeners.size();
+        std::copy(mListeners.begin(), mListeners.end(), snap.slots);
     }
-    if (mDirtyHook && !change.dirtyAttributes.empty()) mDirtyHook(change.dirtyAttributes);
+    if (!change.dirtyAttributes.empty()) snap.notify(change.dirtyAttributes);
     // No pump check: env observations touch only SensorFields and cannot
     // produce a sendCommand. The narrower return type makes this static.
     return change;
