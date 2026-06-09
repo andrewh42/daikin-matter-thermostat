@@ -26,6 +26,10 @@ public:
     explicit Nullable(T v) : mIsNull(false), mValue(v) {}
     bool IsNull() const { return mIsNull; }
     T    Value()  const { return mValue; }
+
+    void SetNull()             { mIsNull = true;  mValue = T{}; }
+    void SetNonNull(const T& v){ mIsNull = false; mValue = v;   }
+
     static Nullable Null()       { return Nullable(); }
     static Nullable NonNull(T v) { return Nullable(v); }
 

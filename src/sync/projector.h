@@ -3,16 +3,21 @@
  *
  * Projector
  * ---------
- * Pure function: LogicalACState → cluster-attribute values that Matter
- * controllers should see.
+ * Pure function: LogicalACState → domain values that subscribers will see.
  *
  * Two consumers:
  *
- *   - The reconciler diffs project(before) vs project(after) to compute
- *     which attributes need MatterReportingAttributeChangeCallback().
+ *   - The reconciler diffs project(before) vs project(after) and emits a
+ *     vector<LogicalAttribute> naming what changed.
  *
- *   - The AAI Read paths (Phase 5) call per-attribute projectors directly
- *     so a controller read returns the bridge's current view.
+ *   - The AAI Read paths call per-attribute projectors directly and
+ *     translate the domain value to CHIP at encode time
+ *     (see aai_translation.h).
+ *
+ * Projector outputs are *domain* types throughout (`OperationalMode`,
+ * `RunningMode`, `ObservationSource`, `FanSpeed`, `std::optional<T>`):
+ * Matter cluster enums and `chip::app::DataModel::Nullable<T>` appear only
+ * on the AAI side of the wall.
  *
  * Auto-mode band synthesis:
  *
@@ -23,11 +28,8 @@
  *     shadow (so a mode flip back lands somewhere familiar) rather than a
  *     synthesised δ-band.
  *
- * RunningMode derivation:
- *
- *   - We don't have a dedicated S21 probe for compressor activity, so the
- *     bridge approximates from indoorTemp vs active setpoint with a small
- *     hysteresis. See sync-analysis §4.12.
+ * RunningMode comes from state.runningMode (fused at observation time by
+ * the reconciler), with a !onOff override.
  *
  * Projections read TwinField::observed() (the "faithful UI" policy): a
  * controller's view tracks what the device has actually acknowledged, not
@@ -37,9 +39,9 @@
 #pragma once
 
 #include "logical_ac_state.h"
-#include "matter_attribute_path.h"
-
-#include <app-common/zap-generated/attributes/Accessors.h>
+#include "logical_attribute.h"
+#include "operational_mode.h"
+#include "twin_field.h"
 
 #include <cstdint>
 #include <optional>
@@ -47,43 +49,35 @@
 
 namespace sync {
 
-using ThermostatRunningModeEnum = chip::app::Clusters::Thermostat::ThermostatRunningModeEnum;
-using SetpointChangeSourceEnum  = chip::app::Clusters::Thermostat::SetpointChangeSourceEnum;
-using FanModeEnum               = chip::app::Clusters::FanControl::FanModeEnum;
-
 struct ProjectorConfig {
-    int16_t autoBandHalfWidthCentiC      = 50; ///< ± from autoSetpoint
-    int16_t runningModeHysteresisCentiC  = 50; ///< deadzone around setpoint
+    int16_t autoBandHalfWidthCentiC = 50; ///< ± from autoSetpoint
 };
 
-/// Complete cluster-attribute projection of LogicalACState. Field-by-field
+/// Complete domain-side projection of LogicalACState. Field-by-field
 /// equality on this struct is what produces the dirty-attribute set.
 struct ProjectedClusterState {
-    // OnOff cluster
-    bool onOff;
+    // OnOff
+    bool                          onOff;
 
-    // Thermostat cluster
-    SystemModeEnum            systemMode;
-    int16_t                   occupiedHeatingSetpoint;
-    int16_t                   occupiedCoolingSetpoint;
-    ThermostatRunningModeEnum runningMode;
-    std::optional<int16_t>    localTemperature;   // nullopt → cluster reports null
-    std::optional<int16_t>    outdoorTemperature; // nullopt → cluster reports null
-    SetpointChangeSourceEnum  setpointSource;
+    // Thermostat
+    OperationalMode               mode;
+    int16_t                       occupiedHeatingSetpoint;
+    int16_t                       occupiedCoolingSetpoint;
+    RunningMode                   runningMode;
+    std::optional<int16_t>        localTemperature;
+    std::optional<int16_t>        outdoorTemperature;
+    ObservationSource             setpointSource;
 
-    // FanControl cluster
-    FanSpeed                  speedSetting;       // nullopt → cluster reports null
-    FanModeEnum               fanMode;
-    uint8_t                   speedCurrent;       // mid-range while Auto
+    // FanControl
+    FanSpeed                      speedSetting;
+    bool                          fanIsAuto;
+    uint8_t                       speedCurrent;
 
-    // RelativeHumidityMeasurement cluster
-    std::optional<uint16_t>   humidityCentiPercent; // nullopt → cluster reports null
+    // RelativeHumidityMeasurement
+    std::optional<uint16_t>       humidityCentiPercent;
 
     // BridgedDeviceBasicInformation
-    bool                      reachable;
-
-    // No defaulted comparison: we're on C++17 and Catch2 doesn't need it.
-    // diffProjections compares field-by-field directly.
+    bool                          reachable;
 };
 
 class Projector {
@@ -93,37 +87,35 @@ public:
     /// Full projection. Used by the reconciler's diff.
     ProjectedClusterState project(const LogicalACState&) const;
 
-    // Per-attribute helpers for AAI Read paths. Each is the value the
-    // matching cluster Accessor::Get would return if the data lived in
-    // the cluster server's RAM.
-    bool                          projectedOnOff(const LogicalACState&) const;
-    SystemModeEnum                projectedSystemMode(const LogicalACState&) const;
-    int16_t                       projectedOccupiedHeatingSetpoint(const LogicalACState&) const;
-    int16_t                       projectedOccupiedCoolingSetpoint(const LogicalACState&) const;
-    ThermostatRunningModeEnum     projectedRunningMode(const LogicalACState&) const;
-    std::optional<int16_t>        projectedLocalTemperature(const LogicalACState&) const;
-    std::optional<int16_t>        projectedOutdoorTemperature(const LogicalACState&) const;
-    SetpointChangeSourceEnum      projectedSetpointSource(const LogicalACState&) const;
-    FanSpeed                      projectedSpeedSetting(const LogicalACState&) const;
-    FanModeEnum                   projectedFanMode(const LogicalACState&) const;
-    uint8_t                       projectedSpeedCurrent(const LogicalACState&) const;
-    std::optional<uint16_t>       projectedHumidityCentiPercent(const LogicalACState&) const;
-    bool                          projectedReachable(const LogicalACState&) const;
+    // Per-attribute helpers. Domain types throughout; the AAI Read paths
+    // call sync_aai::toMatter… at encode time.
+    bool                       projectedOnOff(const LogicalACState&) const;
+    OperationalMode            projectedMode(const LogicalACState&) const;
+    int16_t                    projectedOccupiedHeatingSetpoint(const LogicalACState&) const;
+    int16_t                    projectedOccupiedCoolingSetpoint(const LogicalACState&) const;
+    RunningMode                projectedRunningMode(const LogicalACState&) const;
+    std::optional<int16_t>     projectedLocalTemperature(const LogicalACState&) const;
+    std::optional<int16_t>     projectedOutdoorTemperature(const LogicalACState&) const;
+    ObservationSource          projectedSetpointSource(const LogicalACState&) const;
+    FanSpeed                   projectedSpeedSetting(const LogicalACState&) const;
+    bool                       projectedFanIsAuto(const LogicalACState&) const;
+    uint8_t                    projectedSpeedCurrent(const LogicalACState&) const;
+    std::optional<uint16_t>    projectedHumidityCentiPercent(const LogicalACState&) const;
+    bool                       projectedReachable(const LogicalACState&) const;
 
     const ProjectorConfig& config() const { return mConfig; }
 
 private:
     ProjectorConfig mConfig;
-
-    ThermostatRunningModeEnum runningModeFromValve(bool refrigerantFlowing, const LogicalACState&) const;
-    ThermostatRunningModeEnum runningModeFromTemperature(const LogicalACState&) const;
 };
 
-/// Field-by-field diff of two projections. Returns the cluster-attribute
-/// paths that differ, on the given endpoint. Order is stable for testability.
-std::vector<MatterAttributePath>
+/// Field-by-field diff of two projections. Returns the LogicalAttribute
+/// values that differ. Order is stable for testability.
+///
+/// SystemMode is derived from (onOff, mode), so the diff emits it whenever
+/// either of those underlying fields changes.
+std::vector<LogicalAttribute>
 diffProjections(const ProjectedClusterState& before,
-                const ProjectedClusterState& after,
-                chip::EndpointId             endpoint);
+                const ProjectedClusterState& after);
 
 } // namespace sync

@@ -48,6 +48,9 @@ catch_discover_tests(s21_manager_tests)
 
 add_executable(sync_tests
     sync/test_smoke.cpp
+    sync/test_logical_attribute.cpp
+    sync/test_operational_mode.cpp
+    sync/test_aai_translation.cpp
     sync/test_twin_field.cpp
     sync/test_logical_ac_state.cpp
     sync/test_reconciler.cpp
@@ -56,9 +59,12 @@ add_executable(sync_tests
     sync/test_integration.cpp
     sync/test_threading.cpp
     sync/test_reachable.cpp
+    sync/test_change_publisher.cpp
+    sync/test_bridge_kernel.cpp
     ${SRC_DIR}/sync/projector.cpp
     ${SRC_DIR}/sync/reconciler.cpp
     ${SRC_DIR}/sync/atomic_buffer.cpp
+    ${SRC_DIR}/sync/change_publisher.cpp
 )
 
 target_include_directories(sync_tests PRIVATE
@@ -70,3 +76,26 @@ target_include_directories(sync_tests PRIVATE
 
 target_link_libraries(sync_tests PRIVATE Catch2::Catch2WithMain)
 catch_discover_tests(sync_tests)
+
+# ─── sync_kernel_chip_free: build-only check that pins the §3 decoupling ─────
+# Compiles the kernel translation units (Projector, Reconciler, AtomicTxn)
+# with the s21/ and sync/ headers visible but **no** chip/… on the include
+# path. If any kernel TU regresses to reaching for a CHIP header, this
+# target fails its build, which CTest treats as a failure.
+add_library(sync_kernel_chip_free OBJECT
+    ${SRC_DIR}/sync/projector.cpp
+    ${SRC_DIR}/sync/reconciler.cpp
+    ${SRC_DIR}/sync/atomic_buffer.cpp
+    ${SRC_DIR}/sync/change_publisher.cpp
+)
+target_include_directories(sync_kernel_chip_free PRIVATE
+    ${SRC_DIR}/sync
+    ${SRC_DIR}/s21
+    ${CMAKE_SOURCE_DIR}/../third_party
+)
+set_target_properties(sync_kernel_chip_free PROPERTIES EXCLUDE_FROM_ALL TRUE)
+
+add_test(NAME sync_kernel_chip_free_build
+         COMMAND ${CMAKE_COMMAND}
+                 --build ${CMAKE_BINARY_DIR}
+                 --target sync_kernel_chip_free)

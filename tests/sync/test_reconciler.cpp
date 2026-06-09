@@ -6,6 +6,7 @@
  *   B  Auto mode (3-slot shadow)
  *   C  Coalescing
  *   D  Conflict resolution & provenance
+ *   F  RunningMode fusion at observation time
  */
 
 #include <catch2/catch_test_macros.hpp>
@@ -15,12 +16,6 @@
 #include <algorithm>
 
 using namespace sync;
-
-using SystemModeEnum            = chip::app::Clusters::Thermostat::SystemModeEnum;
-using ThermostatRunningModeEnum = chip::app::Clusters::Thermostat::ThermostatRunningModeEnum;
-namespace TAttr  = chip::app::Clusters::Thermostat::Attributes;
-namespace FCAttr = chip::app::Clusters::FanControl::Attributes;
-namespace OOAttr = chip::app::Clusters::OnOff::Attributes;
 
 // ─── Test fixture & helpers ──────────────────────────────────────────────────
 
@@ -37,13 +32,10 @@ struct Harness {
     }
 };
 
-bool containsAttr(const std::vector<MatterAttributePath>& paths,
-                  chip::ClusterId cluster, chip::AttributeId attribute)
+bool containsAttr(const std::vector<LogicalAttribute>& attrs, LogicalAttribute target)
 {
-    return std::any_of(paths.begin(), paths.end(),
-        [&](const MatterAttributePath& p) {
-            return p.cluster == cluster && p.attribute == attribute;
-        });
+    return std::any_of(attrs.begin(), attrs.end(),
+        [&](LogicalAttribute a) { return a == target; });
 }
 
 S21OperationalObservation opObs(bool onOff, OperatingMode mode, int16_t setpoint,
@@ -64,7 +56,7 @@ LogicalACStateDefaults coolModeDefaults(int16_t coolSp = 2400)
 {
     LogicalACStateDefaults d;
     d.onOff        = true;
-    d.mode         = SystemModeEnum::kCool;
+    d.mode         = OperationalMode::Cool;
     d.coolSetpoint = coolSp;
     return d;
 }
@@ -73,7 +65,7 @@ LogicalACStateDefaults autoModeDefaults(int16_t autoSp = 2200)
 {
     LogicalACStateDefaults d;
     d.onOff        = true;
-    d.mode         = SystemModeEnum::kAuto;
+    d.mode         = OperationalMode::Auto;
     d.autoSetpoint = autoSp;
     d.heatSetpoint = 2000;
     d.coolSetpoint = 2500;
@@ -89,34 +81,26 @@ TEST_CASE("A1: stale poll does not revert a fresher controller write",
 {
     Harness h(coolModeDefaults(2400));
 
-    // Fresh device baseline so it's not "boot defaults".
     h.rec.applyOperationalObservation(opObs(true, OperatingMode::Cool, 2400));
     REQUIRE(h.state.coolSetpoint.observed() == 2400);
 
-    // Controller writes a new desired.
     auto change = h.rec.applyIntent(SetOccupiedCoolingSetpointIntent{2600});
     REQUIRE(h.state.coolSetpoint.desired() == 2600);
     REQUIRE_FALSE(h.state.coolSetpoint.inFlight().has_value());
     REQUIRE(change.sendCommand.has_value());
     REQUIRE(change.sendCommand->setpointCelsius == 2600);
 
-    // Pump dispatches and reports it to the reconciler.
     h.rec.onCommandSent(*change.sendCommand);
     REQUIRE(h.state.coolSetpoint.inFlight().has_value());
     REQUIRE(*h.state.coolSetpoint.inFlight() == 2600);
 
-    // Stale poll: still reading the pre-write setpoint of 2400. This must
-    // NOT clobber desired or in-flight — TwinField's stale-poll branch
-    // (value == observed while inFlight is set) leaves state unchanged.
     auto staleChange = h.rec.applyOperationalObservation(opObs(true, OperatingMode::Cool, 2400));
 
     REQUIRE(h.state.coolSetpoint.observed() == 2400);
     REQUIRE(h.state.coolSetpoint.inFlight().has_value());
     REQUIRE(*h.state.coolSetpoint.inFlight() == 2600);
     REQUIRE(h.state.coolSetpoint.desired()  == 2600);
-    // No D1 emitted: pendingCommand would dedup against mLastSentCommand.
     REQUIRE_FALSE(staleChange.sendCommand.has_value());
-    // No dirty marker for the cluster either — nothing changed externally.
     REQUIRE(staleChange.dirtyAttributes.empty());
 }
 
@@ -129,7 +113,6 @@ TEST_CASE("A2: confirmation clears in-flight without re-emitting a command",
     auto change = h.rec.applyIntent(SetOccupiedCoolingSetpointIntent{2600});
     h.rec.onCommandSent(*change.sendCommand);
 
-    // Confirming poll.
     auto next = h.rec.applyOperationalObservation(opObs(true, OperatingMode::Cool, 2600));
 
     REQUIRE(h.state.coolSetpoint.observed() == 2600);
@@ -150,8 +133,7 @@ TEST_CASE("A3: external change while no in-flight pulls desired to device value"
     REQUIRE(h.state.coolSetpoint.desired()  == 2200);
     REQUIRE_FALSE(change.sendCommand.has_value());
     REQUIRE(containsAttr(change.dirtyAttributes,
-                         chip::app::Clusters::Thermostat::Id,
-                         TAttr::OccupiedCoolingSetpoint::Id));
+                         LogicalAttribute::OccupiedCoolingSetpoint));
 }
 
 TEST_CASE("A4: disconfirmation when device clamps", "[phase2][reconciler][groupA]")
@@ -162,18 +144,14 @@ TEST_CASE("A4: disconfirmation when device clamps", "[phase2][reconciler][groupA
     auto change = h.rec.applyIntent(SetOccupiedCoolingSetpointIntent{3500});
     h.rec.onCommandSent(*change.sendCommand);
 
-    // Device clamped to 3200 (≠ inFlight 3500, ≠ pre-send observed 3000).
     auto disconfirmed = h.rec.applyOperationalObservation(opObs(true, OperatingMode::Cool, 3200));
 
     REQUIRE(h.state.coolSetpoint.observed() == 3200);
-    // Desired is preserved so any queued controller intent isn't wiped;
-    // dedup against mLastSentCommand stops us from retrying the same value.
     REQUIRE(h.state.coolSetpoint.desired()  == 3500);
     REQUIRE_FALSE(h.state.coolSetpoint.inFlight().has_value());
     REQUIRE_FALSE(disconfirmed.sendCommand.has_value());
     REQUIRE(containsAttr(disconfirmed.dirtyAttributes,
-                         chip::app::Clusters::Thermostat::Id,
-                         TAttr::OccupiedCoolingSetpoint::Id));
+                         LogicalAttribute::OccupiedCoolingSetpoint));
 }
 
 TEST_CASE("A5: multi-attribute snapshot — fresh temp + stale setpoint",
@@ -183,19 +161,15 @@ TEST_CASE("A5: multi-attribute snapshot — fresh temp + stale setpoint",
     h.rec.applyOperationalObservation(opObs(true, OperatingMode::Cool, 2400));
     h.rec.applyEnvironmentalObservation(envObs(2300));
 
-    // Controller raises setpoint.
     auto change = h.rec.applyIntent(SetOccupiedCoolingSetpointIntent{2600});
     h.rec.onCommandSent(*change.sendCommand);
 
-    // Poll: setpoint still stale (2400), temperature fresh (2350). Env
-    // observation owns the LocalTemperature dirty path post-split.
     h.rec.applyOperationalObservation(opObs(true, OperatingMode::Cool, 2400));
     auto envChange = h.rec.applyEnvironmentalObservation(envObs(2350));
 
     REQUIRE(h.state.indoorTemp.observed() == 2350);
     REQUIRE(containsAttr(envChange.dirtyAttributes,
-                         chip::app::Clusters::Thermostat::Id,
-                         TAttr::LocalTemperature::Id));
+                         LogicalAttribute::LocalTemperature));
 }
 
 // ─── Group B — Auto-mode 3-slot shadow ───────────────────────────────────────
@@ -205,19 +179,19 @@ TEST_CASE("B6: auto-target persists across mode flip Cool→Auto→Cool",
 {
     LogicalACStateDefaults d;
     d.onOff        = true;
-    d.mode         = SystemModeEnum::kCool;
+    d.mode         = OperationalMode::Cool;
     d.heatSetpoint = 2000;
     d.coolSetpoint = 2400;
     d.autoSetpoint = 2200;
     Harness h(d);
 
-    auto toAuto = h.rec.applyIntent(SetSystemModeIntent{SystemModeEnum::kAuto});
+    auto toAuto = h.rec.applyIntent(SetSystemModeIntent{true, OperationalMode::Auto});
     REQUIRE(toAuto.sendCommand.has_value());
     REQUIRE(toAuto.sendCommand->operatingMode  == OperatingMode::Auto);
     REQUIRE(toAuto.sendCommand->setpointCelsius == 2200); // unchanged auto shadow
     h.rec.onCommandSent(*toAuto.sendCommand);
 
-    auto backToCool = h.rec.applyIntent(SetSystemModeIntent{SystemModeEnum::kCool});
+    auto backToCool = h.rec.applyIntent(SetSystemModeIntent{true, OperationalMode::Cool});
     REQUIRE(backToCool.sendCommand.has_value());
     REQUIRE(backToCool.sendCommand->operatingMode  == OperatingMode::Cool);
     REQUIRE(backToCool.sendCommand->setpointCelsius == 2400);
@@ -230,9 +204,6 @@ TEST_CASE("B7: heat-edge edit in Auto recomputes centre as midpoint",
     Harness h(autoModeDefaults(2200));
     h.rec.applyOperationalObservation(opObs(true, OperatingMode::Auto, 2200));
 
-    // Projected band before: cool=22.5, heat=21.5
-    // Controller drags heat edge down to 19.0
-    // New centre = (22.5 + 19.0) / 2 = 20.75  → 2075 in 0.01°C
     auto change = h.rec.applyIntent(SetOccupiedHeatingSetpointIntent{1900});
 
     REQUIRE(h.state.autoSetpoint.desired() == 2075);
@@ -247,8 +218,6 @@ TEST_CASE("B8: cool-edge edit in Auto is symmetric to heat-edge edit",
     Harness h(autoModeDefaults(2200));
     h.rec.applyOperationalObservation(opObs(true, OperatingMode::Auto, 2200));
 
-    // Drag cool edge up to 25.0.
-    // New centre = (2500 + (2200-50)) / 2 = (2500 + 2150)/2 = 2325
     auto change = h.rec.applyIntent(SetOccupiedCoolingSetpointIntent{2500});
 
     REQUIRE(h.state.autoSetpoint.desired() == 2325);
@@ -261,21 +230,14 @@ TEST_CASE("B9: band-translate (both edges +2°C in two intents) → centre +2°C
     Harness h(autoModeDefaults(2200));
     h.rec.applyOperationalObservation(opObs(true, OperatingMode::Auto, 2200));
 
-    // Heat edge: 21.5 → 23.5  (centre becomes (22.5 + 23.5)/2 = 23.0)
     h.rec.applyIntent(SetOccupiedHeatingSetpointIntent{2350});
     REQUIRE(h.state.autoSetpoint.desired() == 2300);
 
-    // Cool edge: 22.5 → 24.5
-    // Projected heat from current desired = 2300 - 50 = 2250
-    // New centre = (2450 + 2250) / 2 = 2350
     h.rec.applyIntent(SetOccupiedCoolingSetpointIntent{2450});
     REQUIRE(h.state.autoSetpoint.desired() == 2350);
 
-    // Net centre +1.5°C from a +2°C move on each edge. The midpoint rule
-    // doesn't recover the exact band-translate in two non-atomic intents
-    // because the heat edit shifts the centre, which then biases the cool
-    // edit. Group C/Phase 4 (atomic batch) handles the exact "both edges
-    // together" case; this test pins the two-step approximation.
+    // Documented two-step approximation; atomic path (Phase 4) handles
+    // the exact "both edges together" case.
 }
 
 TEST_CASE("B9b: atomic-style simultaneous edge moves → exact centre translation",
@@ -283,12 +245,6 @@ TEST_CASE("B9b: atomic-style simultaneous edge moves → exact centre translatio
 {
     Harness h(autoModeDefaults(2200));
     h.rec.applyOperationalObservation(opObs(true, OperatingMode::Auto, 2200));
-
-    // Simulate Phase 4's atomic flush: snapshot before, then apply both
-    // edges relative to the pre-flush projection. We mimic that here by
-    // computing both new desireds using the SAME starting state — i.e.
-    // suppressing the centre drift between intents. The reconciler doesn't
-    // yet model this; the test documents the gap that Phase 4 closes.
     SUCCEED("Documented: exact band-translate semantics arrive with Phase 4 atomic buffer.");
 }
 
@@ -301,11 +257,10 @@ TEST_CASE("C10: two intents before send produce one composite command",
     h.rec.applyOperationalObservation(opObs(true, OperatingMode::Cool, 2400));
 
     h.rec.applyIntent(SetOccupiedCoolingSetpointIntent{2600});
-    auto change = h.rec.applyIntent(SetSystemModeIntent{SystemModeEnum::kHeat});
+    auto change = h.rec.applyIntent(SetSystemModeIntent{true, OperationalMode::Heat});
 
     REQUIRE(change.sendCommand.has_value());
     REQUIRE(change.sendCommand->operatingMode  == OperatingMode::Heat);
-    // Heat mode shadow defaults to LogicalACStateDefaults.heatSetpoint=2000.
     REQUIRE(change.sendCommand->setpointCelsius == 2000);
 }
 
@@ -330,10 +285,8 @@ TEST_CASE("Cdedup: identical recomputed command is suppressed",
     auto change1 = h.rec.applyIntent(SetOccupiedCoolingSetpointIntent{2600});
     REQUIRE(change1.sendCommand.has_value());
     h.rec.onCommandSent(*change1.sendCommand);
-    // Confirm so dirty clears.
     h.rec.applyOperationalObservation(opObs(true, OperatingMode::Cool, 2600));
 
-    // Re-applying the same desired again must not re-emit.
     auto change2 = h.rec.applyIntent(SetOccupiedCoolingSetpointIntent{2600});
     REQUIRE_FALSE(change2.sendCommand.has_value());
 }
@@ -347,17 +300,14 @@ TEST_CASE("D13: Matter intent inside guard window is dropped after device change
     h.time.set(10'000);
     h.rec.applyOperationalObservation(opObs(true, OperatingMode::Cool, 2400));
 
-    // Device-side change at t=10000ms.
     h.time.advance(5'000);
     h.rec.applyOperationalObservation(opObs(true, OperatingMode::Cool, 2200));
     REQUIRE(h.state.coolSetpoint.observed() == 2200);
 
-    // Matter intent arrives 100ms later with an *older* value — within
-    // the 1000ms guard window.
     h.time.advance(100);
     auto change = h.rec.applyIntent(SetOccupiedCoolingSetpointIntent{2400});
 
-    REQUIRE(h.state.coolSetpoint.desired()  == 2200); // intent dropped
+    REQUIRE(h.state.coolSetpoint.desired()  == 2200);
     REQUIRE_FALSE(change.sendCommand.has_value());
 }
 
@@ -368,7 +318,7 @@ TEST_CASE("D14: Matter intent outside guard window wins",
     h.time.set(10'000);
     h.rec.applyOperationalObservation(opObs(true, OperatingMode::Cool, 2200));
 
-    h.time.advance(2'000); // > 1000ms guard
+    h.time.advance(2'000);
     auto change = h.rec.applyIntent(SetOccupiedCoolingSetpointIntent{2400});
 
     REQUIRE(h.state.coolSetpoint.desired() == 2400);
@@ -383,13 +333,11 @@ TEST_CASE("D14b: guard window does not block intent matching current observed",
     h.time.set(10'000);
     h.rec.applyOperationalObservation(opObs(true, OperatingMode::Cool, 2200));
 
-    // Intent inside guard window but value matches observed — nothing to
-    // conflict over, must be applied.
     h.time.advance(100);
     auto change = h.rec.applyIntent(SetOccupiedCoolingSetpointIntent{2200});
 
     REQUIRE(h.state.coolSetpoint.desired() == 2200);
-    REQUIRE_FALSE(change.sendCommand.has_value()); // already-matched → no D1
+    REQUIRE_FALSE(change.sendCommand.has_value());
 }
 
 // ─── Phase 9 — SetpointChangeSource attribution ──────────────────────────────
@@ -405,7 +353,6 @@ TEST_CASE("D15a: confirmed Matter intent attributes to External",
     REQUIRE(h.state.coolSetpoint.attribution() == ObservationSource::Matter);
 
     h.rec.onCommandSent(*change.sendCommand);
-    // Confirming poll: attribution stays Matter (controller "wins" credit).
     h.rec.applyOperationalObservation(opObs(true, OperatingMode::Cool, 2600));
     REQUIRE(h.state.coolSetpoint.attribution() == ObservationSource::Matter);
 }
@@ -416,16 +363,11 @@ TEST_CASE("D15b: external panel change flips attribution to Device",
     Harness h(coolModeDefaults(2400));
     h.rec.applyOperationalObservation(opObs(true, OperatingMode::Cool, 2400));
 
-    // Pretend Matter wrote a value first, was confirmed, then physical
-    // panel overrode it.
     auto change = h.rec.applyIntent(SetOccupiedCoolingSetpointIntent{2500});
     h.rec.onCommandSent(*change.sendCommand);
     h.rec.applyOperationalObservation(opObs(true, OperatingMode::Cool, 2500));
     REQUIRE(h.state.coolSetpoint.attribution() == ObservationSource::Matter);
 
-    // Physical panel changes to 2200 — wins guard window because we're
-    // past it (time hasn't advanced — but no in-flight is set, so the
-    // change is treated as an external observation regardless).
     h.time.advance(2'000);
     h.rec.applyOperationalObservation(opObs(true, OperatingMode::Cool, 2200));
     REQUIRE(h.state.coolSetpoint.attribution() == ObservationSource::Device);
@@ -440,8 +382,6 @@ TEST_CASE("D15c: disconfirmation flips attribution to Device",
     auto change = h.rec.applyIntent(SetOccupiedCoolingSetpointIntent{3500});
     h.rec.onCommandSent(*change.sendCommand);
 
-    // Device clamps — disconfirmation. Attribution should reflect that
-    // the device, not the controller, is now responsible for the value.
     h.rec.applyOperationalObservation(opObs(true, OperatingMode::Cool, 3200));
     REQUIRE(h.state.coolSetpoint.attribution() == ObservationSource::Device);
 }
@@ -461,11 +401,10 @@ TEST_CASE("Env observation marks LocalTemperature dirty, leaves operational twin
     auto envChange = h.rec.applyEnvironmentalObservation(envObs(2500));
 
     REQUIRE(h.state.indoorTemp.observed() == 2500);
-    REQUIRE(h.state.coolSetpoint.observed() == coolBefore); // untouched
+    REQUIRE(h.state.coolSetpoint.observed() == coolBefore);
     REQUIRE(h.state.onOff.observed()        == onOffBefore);
     REQUIRE(containsAttr(envChange.dirtyAttributes,
-                         chip::app::Clusters::Thermostat::Id,
-                         TAttr::LocalTemperature::Id));
+                         LogicalAttribute::LocalTemperature));
 }
 
 TEST_CASE("Op observation does not touch indoor/outdoor/humidity twins",
@@ -475,33 +414,205 @@ TEST_CASE("Op observation does not touch indoor/outdoor/humidity twins",
     h.rec.applyEnvironmentalObservation(envObs(2300, 1500, 50));
 
     auto opChange = h.rec.applyOperationalObservation(
-        opObs(true, OperatingMode::Cool, 2600)); // move setpoint
+        opObs(true, OperatingMode::Cool, 2600));
 
-    REQUIRE(h.state.indoorTemp.observed()  == 2300); // unchanged by op
+    REQUIRE(h.state.indoorTemp.observed()  == 2300);
     REQUIRE(h.state.outdoorTemp.observed() == 1500);
     REQUIRE(h.state.humidity.observed()    == 50);
     REQUIRE(h.state.coolSetpoint.observed() == 2600);
     REQUIRE(containsAttr(opChange.dirtyAttributes,
-                         chip::app::Clusters::Thermostat::Id,
-                         TAttr::OccupiedCoolingSetpoint::Id));
+                         LogicalAttribute::OccupiedCoolingSetpoint));
 }
 
 TEST_CASE("Env observation return type is EnvironmentalChange",
           "[c1-split][reconciler]")
 {
-    // The static guarantee is the return type itself — applyEnvironmental-
-    // Observation returns EnvironmentalChange, which has only dirtyAttributes
-    // and no sendCommand slot. If env were ever wired to a TwinField, this
-    // assignment would still compile but the env path's structural absence
-    // of sendCommand is what stops the hook fan-out from trying to fire a
-    // pump for it. Smoke-check: the returned dirty paths land where
-    // expected after a sensor delta.
     Harness h(coolModeDefaults(2400));
     h.rec.applyOperationalObservation(opObs(true, OperatingMode::Cool, 2400));
     h.rec.applyEnvironmentalObservation(envObs(2300));
 
     EnvironmentalChange change = h.rec.applyEnvironmentalObservation(envObs(2500));
     REQUIRE(containsAttr(change.dirtyAttributes,
-                         chip::app::Clusters::Thermostat::Id,
-                         TAttr::LocalTemperature::Id));
+                         LogicalAttribute::LocalTemperature));
+}
+
+// ─── Group E — SetSystemModeIntent power/mode split ──────────────────────────
+
+TEST_CASE("E1: SetSystemModeIntent{power=false} flips onOff and preserves mode shadow",
+          "[reconciler][groupE]")
+{
+    Harness h(coolModeDefaults(2400));
+    h.rec.applyOperationalObservation(opObs(true, OperatingMode::Cool, 2400));
+
+    auto change = h.rec.applyIntent(SetSystemModeIntent{false, OperationalMode::Auto});
+
+    REQUIRE(h.state.onOff.desired() == false);
+    // mode shadow retained — power-off doesn't write to the mode twin so a
+    // power-on later restores the prior selection.
+    REQUIRE(h.state.mode.desired() == OperationalMode::Cool);
+    REQUIRE(change.sendCommand.has_value());
+    REQUIRE(change.sendCommand->onOff == false);
+    REQUIRE(change.sendCommand->operatingMode == OperatingMode::Cool);
+}
+
+TEST_CASE("E2: SetSystemModeIntent{power=true, mode=Cool} from off flips both axes",
+          "[reconciler][groupE]")
+{
+    LogicalACStateDefaults d;
+    d.onOff = false;
+    d.mode  = OperationalMode::Auto;
+    Harness h(d);
+    h.rec.applyOperationalObservation(opObs(false, OperatingMode::Auto, 2200));
+
+    auto change = h.rec.applyIntent(SetSystemModeIntent{true, OperationalMode::Cool});
+
+    REQUIRE(h.state.onOff.desired() == true);
+    REQUIRE(h.state.mode.desired()  == OperationalMode::Cool);
+    REQUIRE(change.sendCommand.has_value());
+    REQUIRE(change.sendCommand->onOff == true);
+    REQUIRE(change.sendCommand->operatingMode == OperatingMode::Cool);
+}
+
+TEST_CASE("E3: SetSystemModeIntent{power=true, mode=current} when on flips no axes",
+          "[reconciler][groupE]")
+{
+    Harness h(coolModeDefaults(2400));
+    h.rec.applyOperationalObservation(opObs(true, OperatingMode::Cool, 2400));
+
+    auto change = h.rec.applyIntent(SetSystemModeIntent{true, OperationalMode::Cool});
+
+    REQUIRE_FALSE(change.sendCommand.has_value());
+    REQUIRE(change.dirtyAttributes.empty());
+}
+
+// ─── Group F — RunningMode fusion at observation time ────────────────────────
+
+TEST_CASE("F1: !onOff observation forces runningMode=Off, regardless of S21 mode",
+          "[reconciler][groupF][runningMode]")
+{
+    Harness h;
+    h.rec.applyOperationalObservation(opObs(false, OperatingMode::Cool, 2400, FanMode::Auto,
+                                             std::optional<bool>{true}));
+    REQUIRE(h.state.runningMode.observed() == RunningMode::Off);
+}
+
+TEST_CASE("F2: S21 Auto_Cooling observation → runningMode=Cooling (S21 hint wins)",
+          "[reconciler][groupF][runningMode]")
+{
+    Harness h;
+    h.rec.applyOperationalObservation(opObs(true, OperatingMode::Auto_Cooling, 2200));
+    REQUIRE(h.state.runningMode.observed() == RunningMode::Cooling);
+    REQUIRE(h.state.mode.observed()        == OperationalMode::Auto);
+}
+
+TEST_CASE("F3: S21 Auto_Heating observation → runningMode=Heating (S21 hint wins)",
+          "[reconciler][groupF][runningMode]")
+{
+    Harness h;
+    h.rec.applyOperationalObservation(opObs(true, OperatingMode::Auto_Heating, 2200));
+    REQUIRE(h.state.runningMode.observed() == RunningMode::Heating);
+    REQUIRE(h.state.mode.observed()        == OperationalMode::Auto);
+}
+
+TEST_CASE("F4: Cool mode + valveOpen=true → runningMode=Cooling",
+          "[reconciler][groupF][runningMode]")
+{
+    Harness h;
+    h.rec.applyOperationalObservation(opObs(true, OperatingMode::Cool, 2400, FanMode::Auto,
+                                             std::optional<bool>{true}));
+    REQUIRE(h.state.runningMode.observed() == RunningMode::Cooling);
+}
+
+TEST_CASE("F5: Cool mode + valveOpen=false → runningMode=Off",
+          "[reconciler][groupF][runningMode]")
+{
+    Harness h;
+    h.rec.applyOperationalObservation(opObs(true, OperatingMode::Cool, 2400, FanMode::Auto,
+                                             std::optional<bool>{false}));
+    REQUIRE(h.state.runningMode.observed() == RunningMode::Off);
+}
+
+TEST_CASE("F6: Heat mode + valveOpen=true → runningMode=Heating",
+          "[reconciler][groupF][runningMode]")
+{
+    Harness h;
+    h.rec.applyOperationalObservation(opObs(true, OperatingMode::Heat, 2000, FanMode::Auto,
+                                             std::optional<bool>{true}));
+    REQUIRE(h.state.runningMode.observed() == RunningMode::Heating);
+}
+
+TEST_CASE("F7: Cool mode + no valve + indoor above setpoint+hyst → Cooling (temp fallback)",
+          "[reconciler][groupF][runningMode]")
+{
+    Harness h(coolModeDefaults(2400));
+    // Establish indoor temperature first via env observation.
+    h.rec.applyEnvironmentalObservation(envObs(/*indoor=*/2500));
+    h.rec.applyOperationalObservation(opObs(true, OperatingMode::Cool, 2400));
+    REQUIRE(h.state.runningMode.observed() == RunningMode::Cooling);
+}
+
+TEST_CASE("F8: Cool mode + no valve + indoor at setpoint (within hyst) → Off",
+          "[reconciler][groupF][runningMode]")
+{
+    Harness h(coolModeDefaults(2400));
+    h.rec.applyEnvironmentalObservation(envObs(/*indoor=*/2400));
+    h.rec.applyOperationalObservation(opObs(true, OperatingMode::Cool, 2400));
+    REQUIRE(h.state.runningMode.observed() == RunningMode::Off);
+}
+
+TEST_CASE("F9: Heat mode + no valve + indoor below setpoint-hyst → Heating",
+          "[reconciler][groupF][runningMode]")
+{
+    LogicalACStateDefaults d;
+    d.onOff        = true;
+    d.mode         = OperationalMode::Heat;
+    d.heatSetpoint = 2000;
+    Harness h(d);
+    h.rec.applyEnvironmentalObservation(envObs(/*indoor=*/1900));
+    h.rec.applyOperationalObservation(opObs(true, OperatingMode::Heat, 2000));
+    REQUIRE(h.state.runningMode.observed() == RunningMode::Heating);
+}
+
+TEST_CASE("F10: Auto + valveOpen=true + indoor below auto setpoint → Heating",
+          "[reconciler][groupF][runningMode]")
+{
+    Harness h(autoModeDefaults(2200));
+    h.rec.applyEnvironmentalObservation(envObs(/*indoor=*/2000));
+    h.rec.applyOperationalObservation(opObs(true, OperatingMode::Auto, 2200, FanMode::Auto,
+                                             std::optional<bool>{true}));
+    REQUIRE(h.state.runningMode.observed() == RunningMode::Heating);
+}
+
+TEST_CASE("F11: Auto + valveOpen=true + indoor above auto setpoint → Cooling",
+          "[reconciler][groupF][runningMode]")
+{
+    Harness h(autoModeDefaults(2200));
+    h.rec.applyEnvironmentalObservation(envObs(/*indoor=*/2500));
+    h.rec.applyOperationalObservation(opObs(true, OperatingMode::Auto, 2200, FanMode::Auto,
+                                             std::optional<bool>{true}));
+    REQUIRE(h.state.runningMode.observed() == RunningMode::Cooling);
+}
+
+TEST_CASE("F12: Dry mode → runningMode=Off (no compressor activity reporting)",
+          "[reconciler][groupF][runningMode]")
+{
+    Harness h;
+    h.rec.applyOperationalObservation(opObs(true, OperatingMode::Dry, 2200, FanMode::Auto,
+                                             std::optional<bool>{true}));
+    REQUIRE(h.state.runningMode.observed() == RunningMode::Off);
+}
+
+TEST_CASE("F13: runningMode dirty path emitted when fusion result changes",
+          "[reconciler][groupF][runningMode]")
+{
+    Harness h(coolModeDefaults(2400));
+    h.rec.applyEnvironmentalObservation(envObs(/*indoor=*/2400));
+    auto first = h.rec.applyOperationalObservation(opObs(true, OperatingMode::Cool, 2400));
+    REQUIRE(h.state.runningMode.observed() == RunningMode::Off);
+
+    h.rec.applyEnvironmentalObservation(envObs(/*indoor=*/2600));
+    auto second = h.rec.applyOperationalObservation(opObs(true, OperatingMode::Cool, 2400));
+    REQUIRE(h.state.runningMode.observed() == RunningMode::Cooling);
+    REQUIRE(containsAttr(second.dirtyAttributes,
+                         LogicalAttribute::RunningMode));
 }

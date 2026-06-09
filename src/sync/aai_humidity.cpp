@@ -3,8 +3,8 @@
  */
 #include "aai_humidity.h"
 
-#include "sync_reader.h"
-#include "sync_stack.h"
+#include "aai_translation.h"
+#include "sync_coordinator.h"
 
 #include <app/AttributeAccessInterface.h>
 
@@ -18,7 +18,7 @@ CHIP_ERROR HumidityBridgeAttributeAccess::Read(const ConcreteReadAttributePath& 
                                                AttributeValueEncoder& encoder)
 {
     if (path.mAttributeId == RHAttr::MeasuredValue::Id) {
-        return encoder.Encode(mStack->Reader().ReadHumidityCentiPercent());
+        return encoder.Encode(sync_aai::wrap(mStack->ReadHumidityCentiPercent()));
     }
     // Return success-without-encoding so the cluster server's fallback
     // (RAM/ember) handles any attribute we don't externalise.

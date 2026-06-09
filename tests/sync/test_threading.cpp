@@ -6,7 +6,7 @@
  * Two std::threads pummel a Reconciler from both sides — one playing the
  * Matter-event-loop role (applyIntent), the other the S21-work-queue
  * role (applyOperationalObservation). A std::mutex stands in for
- * SyncStack's Zephyr k_mutex so the test is host-portable.
+ * SyncCoordinator's Zephyr k_mutex so the test is host-portable.
  *
  * What this catches:
  *   - data races on TwinField fields (UBSan would fire);
@@ -29,11 +29,10 @@
 #include <thread>
 
 using namespace sync;
-using SystemModeEnum = chip::app::Clusters::Thermostat::SystemModeEnum;
 
 namespace {
 
-/// Minimal stand-in for the on-device SyncStack lock discipline.
+/// Minimal stand-in for the on-device SyncCoordinator lock discipline.
 struct LockedReconciler {
     ManualTimeSource time;
     LogicalACState   state;
@@ -42,7 +41,7 @@ struct LockedReconciler {
 
     LockedReconciler()
         : state(LogicalACStateDefaults{.onOff        = true,
-                                       .mode         = SystemModeEnum::kCool,
+                                       .mode         = OperationalMode::Cool,
                                        .coolSetpoint = 2400}),
           rec(state, time) {}
 

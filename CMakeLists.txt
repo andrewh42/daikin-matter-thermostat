@@ -47,12 +47,13 @@ target_sources(app PRIVATE
   src/sync/projector.cpp
   src/sync/reconciler.cpp
   src/sync/atomic_buffer.cpp
-  src/sync/sync_reader.cpp
-  src/sync/sync_stack.cpp
+  src/sync/change_publisher.cpp
+  src/sync/sync_coordinator.cpp
   src/sync/aai_thermostat.cpp
   src/sync/aai_onoff.cpp
   src/sync/aai_fan_control.cpp
   src/sync/aai_humidity.cpp
+  src/sync/aai_installer.cpp
 )
 
 ncs_configure_data_model()

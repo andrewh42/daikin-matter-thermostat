@@ -10,7 +10,6 @@
 #include "atomic_buffer.h"
 
 using namespace sync;
-using SystemModeEnum = chip::app::Clusters::Thermostat::SystemModeEnum;
 
 namespace {
 
@@ -31,7 +30,7 @@ LogicalACStateDefaults coolDefaults(int16_t coolSp = 2400)
 {
     LogicalACStateDefaults d;
     d.onOff        = true;
-    d.mode         = SystemModeEnum::kCool;
+    d.mode         = OperationalMode::Cool;
     d.coolSetpoint = coolSp;
     return d;
 }
@@ -40,7 +39,7 @@ LogicalACStateDefaults autoDefaults(int16_t autoSp = 2200)
 {
     LogicalACStateDefaults d;
     d.onOff        = true;
-    d.mode         = SystemModeEnum::kAuto;
+    d.mode         = OperationalMode::Auto;
     d.autoSetpoint = autoSp;
     d.heatSetpoint = 2000;
     d.coolSetpoint = 2500;
@@ -60,13 +59,13 @@ TEST_CASE("Begin → write → write → Commit applies all writes at once",
     REQUIRE(h.txn.write(SetOccupiedCoolingSetpointIntent{2600}) == AtomicTxn::Status::Ok);
     REQUIRE(h.state.coolSetpoint.desired() == 2400); // buffered, not yet applied
 
-    REQUIRE(h.txn.write(SetSystemModeIntent{SystemModeEnum::kHeat}) == AtomicTxn::Status::Ok);
-    REQUIRE(h.state.mode.desired() == SystemModeEnum::kCool); // still buffered
+    REQUIRE(h.txn.write(SetSystemModeIntent{true, OperationalMode::Heat}) == AtomicTxn::Status::Ok);
+    REQUIRE(h.state.mode.desired() == OperationalMode::Cool); // still buffered
 
     auto change = h.txn.commit();
 
     REQUIRE(h.state.coolSetpoint.desired() == 2600);
-    REQUIRE(h.state.mode.desired()         == SystemModeEnum::kHeat);
+    REQUIRE(h.state.mode.desired()         == OperationalMode::Heat);
     REQUIRE_FALSE(h.txn.isOpen());
     REQUIRE(change.sendCommand.has_value());
 }

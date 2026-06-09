@@ -3,8 +3,8 @@
  */
 #include "aai_fan_control.h"
 
-#include "sync_reader.h"
-#include "sync_stack.h"
+#include "aai_translation.h"
+#include "sync_coordinator.h"
 #include "write_intent.h"
 
 #include <app/AttributeAccessInterface.h>
@@ -20,12 +20,17 @@ using FanModeEnum = Clusters::FanControl::FanModeEnum;
 CHIP_ERROR FanControlBridgeAttributeAccess::Read(const ConcreteReadAttributePath& path,
                                                  AttributeValueEncoder& encoder)
 {
-    const auto& r = mStack->Reader();
+    auto& r = *mStack;
     switch (path.mAttributeId) {
-    case FCAttr::SpeedSetting::Id:
-        return encoder.Encode(r.ReadSpeedSetting());
+    case FCAttr::SpeedSetting::Id: {
+        const auto fs = r.ReadSpeedSetting();
+        std::optional<uint8_t> raw =
+            fs.has_value() ? std::optional<uint8_t>{static_cast<uint8_t>(*fs)}
+                           : std::nullopt;
+        return encoder.Encode(sync_aai::wrap(raw));
+    }
     case FCAttr::FanMode::Id:
-        return encoder.Encode(r.ReadFanMode());
+        return encoder.Encode(sync_aai::toMatterFanMode(r.ReadFanIsAuto()));
     case FCAttr::SpeedCurrent::Id:
         return encoder.Encode(r.ReadSpeedCurrent());
     default:
@@ -56,20 +61,9 @@ CHIP_ERROR FanControlBridgeAttributeAccess::Write(const ConcreteDataAttributePat
     case FCAttr::FanMode::Id: {
         FanModeEnum mode;
         ReturnErrorOnFailure(decoder.Decode(mode));
-        // The cluster spec defines FanMode∈{Off,Low,…,Auto,Smart}. We
-        // collapse these to the speed-setting twin:
-        sync::FanSpeed twin;
-        switch (mode) {
-        case FanModeEnum::kOff:    twin = std::nullopt;            break;
-        case FanModeEnum::kLow:    twin = sync::FanLevel::Low;     break;
-        case FanModeEnum::kMedium: twin = sync::FanLevel::Medium;  break;
-        case FanModeEnum::kHigh:   twin = sync::FanLevel::High;    break;
-        case FanModeEnum::kOn:     twin = sync::FanLevel::MidLow;  break;
-        case FanModeEnum::kAuto:
-        case FanModeEnum::kSmart:  twin = std::nullopt;            break;
-        default:                   return CHIP_NO_ERROR;            // ignore weird values
-        }
-        mStack->ApplyIntent(sync::SetSpeedSettingIntent{twin});
+        auto translated = sync_aai::fromMatterFanMode(mode);
+        if (!translated.has_value()) return CHIP_NO_ERROR; // ignore weird values
+        mStack->ApplyIntent(sync::SetSpeedSettingIntent{*translated});
         return CHIP_NO_ERROR;
     }
     case FCAttr::SpeedCurrent::Id:

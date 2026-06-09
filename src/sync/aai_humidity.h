@@ -7,7 +7,7 @@
 #include <app/AttributeAccessInterface.h>
 #include <app-common/zap-generated/cluster-objects.h>
 
-namespace sync { class SyncStack; }
+namespace sync { class SyncCoordinator; }
 
 namespace sync_aai {
 
@@ -23,13 +23,13 @@ public:
     {
     }
 
-    void Bind(sync::SyncStack* stack) { mStack = stack; }
+    void Bind(sync::SyncCoordinator* stack) { mStack = stack; }
 
     CHIP_ERROR Read(const chip::app::ConcreteReadAttributePath& path,
                     chip::app::AttributeValueEncoder& encoder) override;
 
 private:
-    sync::SyncStack* mStack{nullptr};
+    sync::SyncCoordinator* mStack{nullptr};
 };
 
 } // namespace sync_aai

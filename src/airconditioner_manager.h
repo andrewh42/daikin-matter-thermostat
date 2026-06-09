@@ -7,35 +7,37 @@
 
 #include "s21/s21_manager.h"
 #include "sync/changed_attributes_listener.h"
-#include "sync/matter_attribute_path.h"
+#include "sync/logical_attribute.h"
+#include "sync/operational_mode.h"
 
 #include <app-common/zap-generated/attributes/Accessors.h>
 #include <lib/core/CHIPError.h>
 
+#include <optional>
 #include <stdbool.h>
 #include <stdint.h>
 #include <vector>
 #include <zephyr/drivers/gpio.h>
 #include <zephyr/kernel.h>
 
-namespace sync { class SyncStack; }
+namespace sync { class SyncCoordinator; }
 
 /**
  * AirConditionerManager owns the runtime mechanics that connect the S21
  * data link to the Matter stack:
  *
  *   - the S21 work queue and its three work items (init retry, poll, pump),
- *   - the command-pump handler that wakes the pump on SyncStack mutations,
- *   - two ChangedAttributesListeners installed into SyncStack:
+ *   - the command-pump handler that wakes the pump on SyncCoordinator mutations,
+ *   - two ChangedAttributesListeners installed into SyncCoordinator:
  *       MatterReportListener   — drains dirty paths into the Matter event
  *                                loop and fires reporting callbacks under
  *                                the CHIP stack lock,
  *       PowerIndicatorListener — owns LED0 end-to-end (GPIO configure,
  *                                set, and the OnOff dirty-path handler).
  *
- * Bridge state (twins, intents, projections) lives in sync::SyncStack.
+ * Bridge state (twins, intents, projections) lives in sync::SyncCoordinator.
  * Every controller-side write and every poll observation flows through
- * SyncStack; this class is the choreographer, not the source of truth.
+ * SyncCoordinator; this class is the choreographer, not the source of truth.
  */
 class AirConditionerManager {
   public:
@@ -46,18 +48,19 @@ class AirConditionerManager {
     }
 
     /// One-time setup. Brings up the S21 work queue, starts the poll/init
-    /// loop, wires the SyncStack command-pump handler, and registers the
+    /// loop, wires the SyncCoordinator command-pump handler, and registers the
     /// two ChangedAttributesListeners (Matter reporter, power indicator).
-    CHIP_ERROR Init(S21Manager& s21Manager, sync::SyncStack& syncStack);
+    CHIP_ERROR Init(S21Manager& s21Manager, sync::SyncCoordinator& syncStack);
 
     /// Debug helpers retained for the existing Button 2 handler.
     void LogThermostatStatus();
     void LogMatterThermostatStatus();
 
     /// Cached sensor reads used by sensor.cpp's "external thermostat"
-    /// readback path. Both go through SyncStack now.
-    chip::app::DataModel::Nullable<int16_t> GetLocalTemp();
-    chip::app::DataModel::Nullable<int16_t> GetOutdoorTemp();
+    /// readback path. Both go through SyncCoordinator now. `std::nullopt` mirrors
+    /// the cluster-server's "null" state.
+    std::optional<int16_t> GetLocalTemp();
+    std::optional<int16_t> GetOutdoorTemp();
 
   private:
     AirConditionerManager() = default;
@@ -95,17 +98,17 @@ class AirConditionerManager {
         {
             k_mutex_init(&mQueueMutex);
         }
-        void OnChangedAttributes(const std::vector<sync::MatterAttributePath>& paths) override;
+        void OnChangedAttributes(const std::vector<sync::LogicalAttribute>& attributes) override;
         void DrainOnMatterEventLoop();
     private:
-        AirConditionerManager&                  mOwner;
-        k_mutex                                 mQueueMutex;
-        std::vector<sync::MatterAttributePath>  mQueue;
+        AirConditionerManager&                 mOwner;
+        k_mutex                                mQueueMutex;
+        std::vector<sync::LogicalAttribute>    mQueue;
     };
 
     /// Owns LED0. Configures the GPIO at boot, drives it from the OnOff
     /// dirty path on every transition. Both gpio_pin_set_dt and the
-    /// SyncReader call are thread-safe, so no CHIP-event-loop hop is
+    /// SyncCoordinator read call are thread-safe, so no CHIP-event-loop hop is
     /// needed in the dispatch body.
     class PowerIndicator : public sync::ChangedAttributesListener {
     public:
@@ -117,7 +120,7 @@ class AirConditionerManager {
         /// errno (-ENODEV if the GPIO isn't ready, or the value from
         /// gpio_pin_configure_dt on configure failure).
         int Init(bool initialOnOff);
-        void OnChangedAttributes(const std::vector<sync::MatterAttributePath>& paths) override;
+        void OnChangedAttributes(const std::vector<sync::LogicalAttribute>& attributes) override;
     private:
         void Set(bool onOff);
         AirConditionerManager& mOwner;
@@ -132,7 +135,7 @@ class AirConditionerManager {
     int mEnvironmentalReadCountdown{0};
 
     S21Manager*             mS21Manager{nullptr};
-    sync::SyncStack*        mSyncStack{nullptr};
+    sync::SyncCoordinator*        mSyncCoordinator{nullptr};
     struct k_work_q         mS21WorkQueue;
     struct k_work_delayable mPollWork;
     struct k_work_delayable mInitRetryWork;
@@ -150,11 +153,11 @@ class AirConditionerManager {
     void PollEnvironmentalPhase();
     void PollOperationalPhase();
 
-    /// SyncStack command-pump handler: queue mCommandWork on the S21 work
+    /// SyncCoordinator command-pump handler: queue mCommandWork on the S21 work
     /// queue with a short debounce so consecutive intents collapse into
     /// one D1.
     static void ScheduleS21CommandHandler();
 
-    static const char* GetSystemModeStr(chip::app::Clusters::Thermostat::SystemModeEnum);
-    static const char* GetRunningModeStr(chip::app::Clusters::Thermostat::ThermostatRunningModeEnum);
+    static const char* GetOperationalModeStr(sync::OperationalMode);
+    static const char* GetRunningModeStr(sync::RunningMode);
 };

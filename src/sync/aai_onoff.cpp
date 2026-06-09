@@ -3,8 +3,7 @@
  */
 #include "aai_onoff.h"
 
-#include "sync_reader.h"
-#include "sync_stack.h"
+#include "sync_coordinator.h"
 
 #include <app/AttributeAccessInterface.h>
 #include <protocols/interaction_model/StatusCode.h>
@@ -19,7 +18,7 @@ CHIP_ERROR OnOffBridgeAttributeAccess::Read(const ConcreteReadAttributePath& pat
                                             AttributeValueEncoder& encoder)
 {
     if (path.mAttributeId == OOAttr::OnOff::Id) {
-        return encoder.Encode(mStack->Reader().ReadOnOff());
+        return encoder.Encode(mStack->ReadOnOff());
     }
     // Return success-without-encoding so the cluster server's fallback
     // (RAM/ember) handles any attribute we don't externalise.

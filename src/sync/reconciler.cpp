@@ -5,38 +5,48 @@
 
 namespace sync {
 
-using SystemModeEnum = chip::app::Clusters::Thermostat::SystemModeEnum;
-using FanModeEnum    = chip::app::Clusters::FanControl::FanModeEnum;
-using Source         = ObservationSource;
+using Source = ObservationSource;
 
 // ─── Static enum routing helpers ──────────────────────────────────────────────
 
-OperatingMode Reconciler::systemModeToOperatingMode(SystemModeEnum m)
+OperatingMode Reconciler::operationalModeToS21OperatingMode(OperationalMode m)
 {
     switch (m) {
-    case SystemModeEnum::kCool:          return OperatingMode::Cool;
-    case SystemModeEnum::kHeat:          return OperatingMode::Heat;
-    case SystemModeEnum::kEmergencyHeat: return OperatingMode::Heat;
-    case SystemModeEnum::kDry:           return OperatingMode::Dry;
-    case SystemModeEnum::kFanOnly:       return OperatingMode::FanOnly;
-    case SystemModeEnum::kPrecooling:    return OperatingMode::Cool;
-    case SystemModeEnum::kAuto:
-    default:                             return OperatingMode::Auto;
+    case OperationalMode::Cool:    return OperatingMode::Cool;
+    case OperationalMode::Heat:    return OperatingMode::Heat;
+    case OperationalMode::Dry:     return OperatingMode::Dry;
+    case OperationalMode::FanOnly: return OperatingMode::FanOnly;
+    case OperationalMode::Auto:    return OperatingMode::Auto;
     }
+    return OperatingMode::Auto; // unreachable; silences -Wreturn-type
 }
 
-SystemModeEnum Reconciler::operatingModeToSystemMode(OperatingMode m)
+OperationalMode Reconciler::s21OperatingModeToOperationalMode(OperatingMode m)
 {
     switch (m) {
-    case OperatingMode::Cool:         return SystemModeEnum::kCool;
-    case OperatingMode::Heat:         return SystemModeEnum::kHeat;
-    case OperatingMode::Dry:          return SystemModeEnum::kDry;
-    case OperatingMode::FanOnly:      return SystemModeEnum::kFanOnly;
+    case OperatingMode::Cool:         return OperationalMode::Cool;
+    case OperatingMode::Heat:         return OperationalMode::Heat;
+    case OperatingMode::Dry:          return OperationalMode::Dry;
+    case OperatingMode::FanOnly:      return OperationalMode::FanOnly;
     case OperatingMode::Auto:
     case OperatingMode::Auto_Cooling:
-    case OperatingMode::Auto_Heating: return SystemModeEnum::kAuto;
-    default:                          return SystemModeEnum::kAuto;
+    case OperatingMode::Auto_Heating: return OperationalMode::Auto;
     }
+    return OperationalMode::Auto; // unreachable; silences -Wreturn-type
+}
+
+std::optional<RunningMode> Reconciler::s21OperatingModeDirectionHint(OperatingMode m)
+{
+    switch (m) {
+    case OperatingMode::Auto_Cooling: return RunningMode::Cooling;
+    case OperatingMode::Auto_Heating: return RunningMode::Heating;
+    case OperatingMode::Cool:
+    case OperatingMode::Heat:
+    case OperatingMode::Dry:
+    case OperatingMode::FanOnly:
+    case OperatingMode::Auto:         return std::nullopt;
+    }
+    return std::nullopt;
 }
 
 FanMode Reconciler::fanSpeedToS21FanMode(const FanSpeed& s)
@@ -74,6 +84,72 @@ Reconciler::Reconciler(LogicalACState& state, TimeSource& time, ReconcilerConfig
 {
 }
 
+// ─── RunningMode fusion ───────────────────────────────────────────────────────
+
+RunningMode Reconciler::fuseRunningMode(bool                onOff,
+                                       OperatingMode       s21OperatingMode,
+                                       std::optional<bool> refrigerantValveOpen) const
+{
+    if (!onOff) return RunningMode::Off;
+
+    // 1. The S21 operatingMode value itself carries direction info for
+    //    Auto_Cooling/Auto_Heating. That's the most authoritative signal.
+    if (const auto hint = s21OperatingModeDirectionHint(s21OperatingMode); hint.has_value()) {
+        return *hint;
+    }
+
+    const auto opMode = s21OperatingModeToOperationalMode(s21OperatingMode);
+
+    // 2. Refrigerant valve closed → not actively running, regardless of mode.
+    if (refrigerantValveOpen.has_value() && !*refrigerantValveOpen) {
+        return RunningMode::Off;
+    }
+
+    // 3. Refrigerant valve open: direction is unambiguous for Cool/Heat;
+    //    Auto needs indoor temp to disambiguate.
+    if (refrigerantValveOpen.has_value() && *refrigerantValveOpen) {
+        switch (opMode) {
+        case OperationalMode::Cool: return RunningMode::Cooling;
+        case OperationalMode::Heat: return RunningMode::Heating;
+        case OperationalMode::Auto: {
+            const auto& indoorOpt = mState.indoorTemp.observed();
+            const int16_t sp      = mState.autoSetpoint.observed();
+            const bool isHeating  = indoorOpt.has_value() && *indoorOpt < sp;
+            return isHeating ? RunningMode::Heating : RunningMode::Cooling;
+        }
+        case OperationalMode::Dry:
+        case OperationalMode::FanOnly:
+        default:                    return RunningMode::Off;
+        }
+    }
+
+    // 4. No valve info: fall back to indoor vs setpoint hysteresis.
+    const auto& indoorOpt = mState.indoorTemp.observed();
+    if (!indoorOpt.has_value()) return RunningMode::Off;
+    const int16_t indoor = *indoorOpt;
+    const int16_t hyst   = mConfig.runningModeHysteresisCentiC;
+
+    switch (opMode) {
+    case OperationalMode::Cool: {
+        const int16_t sp = mState.coolSetpoint.observed();
+        return (sp + hyst >= indoor) ? RunningMode::Off : RunningMode::Cooling;
+    }
+    case OperationalMode::Heat: {
+        const int16_t sp = mState.heatSetpoint.observed();
+        return (sp - hyst <= indoor) ? RunningMode::Off : RunningMode::Heating;
+    }
+    case OperationalMode::Auto: {
+        const int16_t sp = mState.autoSetpoint.observed();
+        if (indoor > sp + hyst) return RunningMode::Cooling;
+        if (indoor < sp - hyst) return RunningMode::Heating;
+        return RunningMode::Off;
+    }
+    case OperationalMode::Dry:
+    case OperationalMode::FanOnly:
+    default:                    return RunningMode::Off;
+    }
+}
+
 // ─── Guard window ─────────────────────────────────────────────────────────────
 
 bool Reconciler::intentPassesGuard(int64_t lastDeviceObservationMs,
@@ -96,22 +172,29 @@ void Reconciler::apply(const SetOnOffIntent& i)
 
 void Reconciler::apply(const SetSystemModeIntent& i)
 {
-    if (!intentPassesGuard(mLastDeviceObserved.mode,
-                           i.value != mState.mode.observed())) return;
-    mState.mode.setDesired(i.value);
+    // Apply power first; mode write follows only when power-on. A power-off
+    // intent retains the existing mode shadow (so a controller flipping
+    // SystemMode kOff → kCool later lands on the previous setpoint set).
+    if (intentPassesGuard(mLastDeviceObserved.onOff,
+                          i.power != mState.onOff.observed())) {
+        mState.onOff.setDesired(i.power);
+    }
+    if (i.power && intentPassesGuard(mLastDeviceObserved.mode,
+                                     i.mode != mState.mode.observed())) {
+        mState.mode.setDesired(i.mode);
+    }
 }
 
 void Reconciler::apply(const SetOccupiedHeatingSetpointIntent& i)
 {
     switch (mState.mode.observed()) {
-    case SystemModeEnum::kHeat:
-    case SystemModeEnum::kEmergencyHeat:
+    case OperationalMode::Heat:
         if (!intentPassesGuard(mLastDeviceObserved.heatSetpoint,
                                i.value != mState.heatSetpoint.observed())) return;
         mState.heatSetpoint.setDesired(i.value);
         return;
 
-    case SystemModeEnum::kAuto: {
+    case OperationalMode::Auto: {
         // Auto-band heat-edge edit. New centre = midpoint of (current
         // projected cool edge, new heat edge). If both edges move by the
         // same delta in two intents, the net is a band translation
@@ -136,14 +219,13 @@ void Reconciler::apply(const SetOccupiedHeatingSetpointIntent& i)
 void Reconciler::apply(const SetOccupiedCoolingSetpointIntent& i)
 {
     switch (mState.mode.observed()) {
-    case SystemModeEnum::kCool:
-    case SystemModeEnum::kPrecooling:
+    case OperationalMode::Cool:
         if (!intentPassesGuard(mLastDeviceObserved.coolSetpoint,
                                i.value != mState.coolSetpoint.observed())) return;
         mState.coolSetpoint.setDesired(i.value);
         return;
 
-    case SystemModeEnum::kAuto: {
+    case OperationalMode::Auto: {
         const int16_t projectedHeat = static_cast<int16_t>(
             mState.autoSetpoint.desired() - mProjector.config().autoBandHalfWidthCentiC);
         const int16_t newCentre = static_cast<int16_t>((i.value + projectedHeat) / 2);
@@ -176,7 +258,7 @@ OperationalChange Reconciler::applyIntent(const WriteIntent& intent)
     std::visit([this](const auto& specific) { apply(specific); }, intent);
     const auto after  = mProjector.project(mState);
 
-    return {diffProjections(before, after, mConfig.endpoint), pendingCommand()};
+    return {diffProjections(before, after), pendingCommand()};
 }
 
 OperationalChange Reconciler::applyAtomicBundle(const std::vector<WriteIntent>& intents)
@@ -194,7 +276,7 @@ OperationalChange Reconciler::applyAtomicBundle(const std::vector<WriteIntent>& 
     }
 
     const bool collapseAutoBand =
-        (mState.mode.observed() == SystemModeEnum::kAuto) &&
+        (mState.mode.observed() == OperationalMode::Auto) &&
         lastHeat != nullptr && lastCool != nullptr;
 
     if (collapseAutoBand) {
@@ -216,7 +298,7 @@ OperationalChange Reconciler::applyAtomicBundle(const std::vector<WriteIntent>& 
     }
 
     const auto after = mProjector.project(mState);
-    return {diffProjections(before, after, mConfig.endpoint), pendingCommand()};
+    return {diffProjections(before, after), pendingCommand()};
 }
 
 OperationalChange Reconciler::applyOperationalObservation(
@@ -228,29 +310,27 @@ OperationalChange Reconciler::applyOperationalObservation(
     mState.onOff.applyObservation(obs.onOff, Source::Device);
     mLastDeviceObserved.onOff = now;
 
-    const auto observedSysMode = operatingModeToSystemMode(obs.operatingMode);
-    mState.mode.applyObservation(observedSysMode, Source::Device);
+    const auto observedMode = s21OperatingModeToOperationalMode(obs.operatingMode);
+    mState.mode.applyObservation(observedMode, Source::Device);
     mLastDeviceObserved.mode = now;
 
     // The setpoint observation routes to the twin matching the *observed*
     // mode; the other-mode shadows are untouched.
-    switch (obs.operatingMode) {
-    case OperatingMode::Cool:
+    switch (observedMode) {
+    case OperationalMode::Cool:
         mState.coolSetpoint.applyObservation(obs.setpointCelsius, Source::Device);
         mLastDeviceObserved.coolSetpoint = now;
         break;
-    case OperatingMode::Heat:
+    case OperationalMode::Heat:
         mState.heatSetpoint.applyObservation(obs.setpointCelsius, Source::Device);
         mLastDeviceObserved.heatSetpoint = now;
         break;
-    case OperatingMode::Auto:
-    case OperatingMode::Auto_Cooling:
-    case OperatingMode::Auto_Heating:
+    case OperationalMode::Auto:
         mState.autoSetpoint.applyObservation(obs.setpointCelsius, Source::Device);
         mLastDeviceObserved.autoSetpoint = now;
         break;
-    case OperatingMode::Dry:
-    case OperatingMode::FanOnly:
+    case OperationalMode::Dry:
+    case OperationalMode::FanOnly:
         break; // no setpoint-bearing twin
     }
 
@@ -260,12 +340,18 @@ OperationalChange Reconciler::applyOperationalObservation(
 
     mState.refrigerantValveOpen.applyObservation(obs.refrigerantValveOpen);
 
+    // Fuse runningMode at observation time: all the signals we need are
+    // either in this observation or already in state. The projector reads
+    // state.runningMode directly and doesn't redo the inference.
+    mState.runningMode.applyObservation(
+        fuseRunningMode(obs.onOff, obs.operatingMode, obs.refrigerantValveOpen));
+
     // A successful op observation proves the link is up. Env doesn't run
     // every tick, so reachable is anchored on the op heartbeat alone.
     mState.reachable.applyObservation(true);
 
     const auto after = mProjector.project(mState);
-    OperationalChange change{diffProjections(before, after, mConfig.endpoint), std::nullopt};
+    OperationalChange change{diffProjections(before, after), std::nullopt};
     // A fresh observation can clear an in-flight and unblock a queued
     // controller intent — check pendingCommand even on the observation path.
     change.sendCommand = pendingCommand();
@@ -282,7 +368,7 @@ EnvironmentalChange Reconciler::applyEnvironmentalObservation(
     mState.humidity.applyObservation(obs.indoorRelativeHumidityPercent);
 
     const auto after = mProjector.project(mState);
-    return {diffProjections(before, after, mConfig.endpoint)};
+    return {diffProjections(before, after)};
 }
 
 std::optional<S21OperationCommand> Reconciler::pendingCommand() const
@@ -299,22 +385,18 @@ std::optional<S21OperationCommand> Reconciler::pendingCommand() const
 
     S21OperationCommand cmd;
     cmd.onOff         = mState.onOff.desired();
-    cmd.operatingMode = systemModeToOperatingMode(mState.mode.desired());
+    cmd.operatingMode = operationalModeToS21OperatingMode(mState.mode.desired());
 
     switch (mState.mode.desired()) {
-    case SystemModeEnum::kCool:
-    case SystemModeEnum::kPrecooling:
+    case OperationalMode::Cool:
         cmd.setpointCelsius = mState.coolSetpoint.desired();
         break;
-    case SystemModeEnum::kHeat:
-    case SystemModeEnum::kEmergencyHeat:
+    case OperationalMode::Heat:
         cmd.setpointCelsius = mState.heatSetpoint.desired();
         break;
-    case SystemModeEnum::kAuto:
-        cmd.setpointCelsius = mState.autoSetpoint.desired();
-        break;
-    case SystemModeEnum::kDry:
-    case SystemModeEnum::kFanOnly:
+    case OperationalMode::Auto:
+    case OperationalMode::Dry:
+    case OperationalMode::FanOnly:
     default:
         cmd.setpointCelsius = mState.autoSetpoint.desired();
         break;
@@ -331,17 +413,17 @@ void Reconciler::onCommandSent(const S21OperationCommand& cmd)
     mState.onOff.promoteDesiredToInFlight();
     mState.mode.promoteDesiredToInFlight();
     switch (mState.mode.desired()) {
-    case SystemModeEnum::kCool:
-    case SystemModeEnum::kPrecooling:
+    case OperationalMode::Cool:
         mState.coolSetpoint.promoteDesiredToInFlight();
         break;
-    case SystemModeEnum::kHeat:
-    case SystemModeEnum::kEmergencyHeat:
+    case OperationalMode::Heat:
         mState.heatSetpoint.promoteDesiredToInFlight();
         break;
-    case SystemModeEnum::kAuto:
+    case OperationalMode::Auto:
         mState.autoSetpoint.promoteDesiredToInFlight();
         break;
+    case OperationalMode::Dry:
+    case OperationalMode::FanOnly:
     default:
         break;
     }

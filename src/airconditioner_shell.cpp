@@ -9,14 +9,14 @@
  *                           # observed / desired / inFlight / lastSrc /
  *                           # attribution; SensorFields show observed only.
  *
- * Synchronous: handlers read sync::SyncStack under its internal mutex,
+ * Synchronous: handlers read sync::SyncCoordinator under its internal mutex,
  * copy the state out, and format on the shell thread. Unlike s21_shell.cpp
  * there is no async callback indirection because no I/O is involved.
  */
 
 #include "sync/logical_ac_state.h"
 #include "sync/sensor_field.h"
-#include "sync/sync_stack.h"
+#include "sync/sync_coordinator.h"
 #include "sync/twin_field.h"
 
 #include <app-common/zap-generated/attributes/Accessors.h>
@@ -33,9 +33,10 @@ using sync::FanLevel;
 using sync::FanSpeed;
 using sync::LogicalACState;
 using sync::ObservationSource;
+using sync::OperationalMode;
+using sync::RunningMode;
 using sync::SensorField;
 using sync::TwinField;
-using SystemModeEnum = sync::SystemModeEnum;
 
 /* ── Value formatters ─────────────────────────────────────────────── */
 
@@ -80,25 +81,36 @@ void fmtHumidityOpt(char* buf, size_t n, std::optional<uint8_t> v)
     else   snprintf(buf, n, "n/a");
 }
 
-const char* systemModeStr(SystemModeEnum m)
+const char* operationalModeStr(OperationalMode m)
 {
     switch (m) {
-    case SystemModeEnum::kOff:           return "Off";
-    case SystemModeEnum::kAuto:          return "Auto";
-    case SystemModeEnum::kCool:          return "Cool";
-    case SystemModeEnum::kHeat:          return "Heat";
-    case SystemModeEnum::kEmergencyHeat: return "EmergHeat";
-    case SystemModeEnum::kPrecooling:    return "Precool";
-    case SystemModeEnum::kFanOnly:       return "FanOnly";
-    case SystemModeEnum::kDry:           return "Dry";
-    case SystemModeEnum::kSleep:         return "Sleep";
-    default:                             return "Unknown";
+    case OperationalMode::Auto:    return "Auto";
+    case OperationalMode::Cool:    return "Cool";
+    case OperationalMode::Heat:    return "Heat";
+    case OperationalMode::FanOnly: return "FanOnly";
+    case OperationalMode::Dry:     return "Dry";
     }
+    return "Unknown";
 }
 
-void fmtSystemMode(char* buf, size_t n, SystemModeEnum v)
+void fmtOperationalMode(char* buf, size_t n, OperationalMode v)
 {
-    snprintf(buf, n, "%s", systemModeStr(v));
+    snprintf(buf, n, "%s", operationalModeStr(v));
+}
+
+const char* runningModeStr(RunningMode m)
+{
+    switch (m) {
+    case RunningMode::Off:     return "Off";
+    case RunningMode::Cooling: return "Cooling";
+    case RunningMode::Heating: return "Heating";
+    }
+    return "Unknown";
+}
+
+void fmtRunningMode(char* buf, size_t n, RunningMode v)
+{
+    snprintf(buf, n, "%s", runningModeStr(v));
 }
 
 const char* fanLevelStr(FanLevel f)
@@ -166,15 +178,16 @@ void printSensor(const struct shell* sh, const char* name,
 
 int CmdStatus(const struct shell* sh, size_t /*argc*/, char** /*argv*/)
 {
-    const LogicalACState s = sync::SyncStack::Instance().Snapshot();
+    const LogicalACState s = sync::SyncCoordinator::Instance().Snapshot();
 
     shell_print(sh, "LogicalACState:");
     printTwin(sh, "onOff",        s.onOff,        fmtOnOff);
-    printTwin(sh, "mode",         s.mode,         fmtSystemMode);
+    printTwin(sh, "mode",         s.mode,         fmtOperationalMode);
     printTwin(sh, "heatSetpoint", s.heatSetpoint, fmtTemperature);
     printTwin(sh, "coolSetpoint", s.coolSetpoint, fmtTemperature);
     printTwin(sh, "autoSetpoint", s.autoSetpoint, fmtTemperature);
     printTwin(sh, "fan",          s.fan,          fmtFanSpeed);
+    printSensor(sh, "runningMode",      s.runningMode,          fmtRunningMode);
     printSensor(sh, "indoorTemp",       s.indoorTemp,           fmtTemperatureOpt);
     printSensor(sh, "outdoorTemp",      s.outdoorTemp,          fmtTemperatureOpt);
     printSensor(sh, "humidity",         s.humidity,             fmtHumidityOpt);

@@ -50,7 +50,7 @@
 #pragma once
 
 #include "logical_ac_state.h"
-#include "matter_attribute_path.h"
+#include "logical_attribute.h"
 #include "projector.h"
 #include "s21_command.h"
 #include "s21_observation.h"
@@ -63,9 +63,13 @@
 namespace sync {
 
 struct ReconcilerConfig {
-    chip::EndpointId endpoint           = 1;
-    int64_t          deviceWinsWindowMs = 1000;   ///< Group D guard window
-    ProjectorConfig  projector{};                 ///< Shared with the AAI Read paths.
+    int64_t         deviceWinsWindowMs = 1000;   ///< Group D guard window
+    ProjectorConfig projector{};                 ///< Shared with the AAI Read paths.
+
+    /// Hysteresis used by the runningMode temperature-fallback fusion at
+    /// observation time (when refrigerantValveOpen is nullopt and the S21
+    /// operatingMode doesn't disambiguate direction).
+    int16_t runningModeHysteresisCentiC = 50;
 };
 
 /// Returned by every mutation path that can produce a setOperation()
@@ -73,7 +77,7 @@ struct ReconcilerConfig {
 /// and `AtomicTxn::commit`. The presence of `sendCommand` reflects that
 /// these paths touch TwinFields that participate in `pendingCommand()`.
 struct OperationalChange {
-    std::vector<MatterAttributePath>   dirtyAttributes;
+    std::vector<LogicalAttribute>      dirtyAttributes;
     std::optional<S21OperationCommand> sendCommand;
 };
 
@@ -83,7 +87,7 @@ struct OperationalChange {
 /// Field name matches `OperationalChange::dirtyAttributes` so caller code
 /// reading either type stays parallel.
 struct EnvironmentalChange {
-    std::vector<MatterAttributePath> dirtyAttributes;
+    std::vector<LogicalAttribute> dirtyAttributes;
 };
 
 class Reconciler {
@@ -161,10 +165,24 @@ private:
     // intent should be applied; false to drop it.
     bool intentPassesGuard(int64_t lastDeviceObservationMs, bool valueDiffersFromObserved) const;
 
-    static OperatingMode  systemModeToOperatingMode(SystemModeEnum);
-    static SystemModeEnum operatingModeToSystemMode(OperatingMode);
-    static FanMode        fanSpeedToS21FanMode(const FanSpeed&);
-    static FanSpeed       s21FanModeToSpeedSetting(FanMode);
+    static OperatingMode    operationalModeToS21OperatingMode(OperationalMode);
+    static OperationalMode  s21OperatingModeToOperationalMode(OperatingMode);
+    /// Returns the explicit direction a particular S21 operatingMode value
+    /// carries (Auto_Cooling → Cooling, Auto_Heating → Heating), or
+    /// nullopt when the operatingMode value alone doesn't disambiguate
+    /// direction.
+    static std::optional<RunningMode> s21OperatingModeDirectionHint(OperatingMode);
+    static FanMode         fanSpeedToS21FanMode(const FanSpeed&);
+    static FanSpeed        s21FanModeToSpeedSetting(FanMode);
+
+    /// Fuse all available direction signals into a single RunningMode.
+    /// Precedence (highest first): power off → Off; S21 mode direction
+    /// hint (Auto_Cooling/Auto_Heating) wins; refrigerantValveOpen wins
+    /// next (combined with the operational mode); finally, indoor vs
+    /// active-setpoint hysteresis as a no-valve fallback.
+    RunningMode fuseRunningMode(bool                onOff,
+                                OperatingMode       s21OperatingMode,
+                                std::optional<bool> refrigerantValveOpen) const;
 };
 
 } // namespace sync

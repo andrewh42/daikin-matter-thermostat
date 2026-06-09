@@ -2,27 +2,32 @@
  * SPDX-License-Identifier: LicenseRef-Apache-2.0
  *
  * Tests for sync::Projector. Cluster-side view of LogicalACState.
+ *
+ * RunningMode fusion lives in the reconciler (observation time); the
+ * projector just maps state.runningMode → domain RunningMode with a !onOff
+ * override. Tests here pin the mapping and the override; the fusion logic
+ * is exercised by test_reconciler.cpp.
  */
 
 #include <catch2/catch_test_macros.hpp>
 
 #include "projector.h"
+#include "logical_attribute.h"
+
+#include <algorithm>
 
 using namespace sync;
 
-using SystemModeEnum            = chip::app::Clusters::Thermostat::SystemModeEnum;
-using ThermostatRunningModeEnum = chip::app::Clusters::Thermostat::ThermostatRunningModeEnum;
-using SetpointChangeSourceEnum  = chip::app::Clusters::Thermostat::SetpointChangeSourceEnum;
-using FanModeEnum               = chip::app::Clusters::FanControl::FanModeEnum;
-
 namespace {
 
-LogicalACState stateAt(SystemModeEnum mode, int16_t heatSp, int16_t coolSp,
-                       int16_t autoSp, int16_t indoor = 2300, int16_t outdoor = 1500,
-                       uint8_t humidity = 50)
+LogicalACState stateAt(bool onOff, OperationalMode mode,
+                       int16_t heatSp, int16_t coolSp, int16_t autoSp,
+                       int16_t indoor = 2300, int16_t outdoor = 1500,
+                       uint8_t humidity = 50,
+                       RunningMode runningMode = RunningMode::Off)
 {
     LogicalACStateDefaults d;
-    d.onOff        = true;
+    d.onOff        = onOff;
     d.mode         = mode;
     d.heatSetpoint = heatSp;
     d.coolSetpoint = coolSp;
@@ -30,7 +35,14 @@ LogicalACState stateAt(SystemModeEnum mode, int16_t heatSp, int16_t coolSp,
     d.indoorTemp   = indoor;
     d.outdoorTemp  = outdoor;
     d.humidity     = humidity;
+    d.runningMode  = runningMode;
     return LogicalACState(d);
+}
+
+bool contains(const std::vector<LogicalAttribute>& attrs, LogicalAttribute target)
+{
+    return std::any_of(attrs.begin(), attrs.end(),
+        [&](LogicalAttribute a) { return a == target; });
 }
 
 } // namespace
@@ -41,7 +53,7 @@ TEST_CASE("Cool mode: cluster cool = observed cool, cluster heat = shadow heat",
           "[phase3][projector]")
 {
     Projector p;
-    auto s = stateAt(SystemModeEnum::kCool, 2000, 2400, 2200);
+    auto s = stateAt(true, OperationalMode::Cool, 2000, 2400, 2200);
 
     REQUIRE(p.projectedOccupiedCoolingSetpoint(s) == 2400);
     REQUIRE(p.projectedOccupiedHeatingSetpoint(s) == 2000);
@@ -51,7 +63,7 @@ TEST_CASE("Heat mode: cluster heat = observed heat, cluster cool = shadow cool",
           "[phase3][projector]")
 {
     Projector p;
-    auto s = stateAt(SystemModeEnum::kHeat, 2000, 2400, 2200);
+    auto s = stateAt(true, OperationalMode::Heat, 2000, 2400, 2200);
 
     REQUIRE(p.projectedOccupiedHeatingSetpoint(s) == 2000);
     REQUIRE(p.projectedOccupiedCoolingSetpoint(s) == 2400);
@@ -61,7 +73,7 @@ TEST_CASE("Auto mode synthesises band from autoSetpoint ± δ",
           "[phase3][projector]")
 {
     Projector p(ProjectorConfig{.autoBandHalfWidthCentiC = 50});
-    auto s = stateAt(SystemModeEnum::kAuto, 2000, 2400, 2200);
+    auto s = stateAt(true, OperationalMode::Auto, 2000, 2400, 2200);
 
     REQUIRE(p.projectedOccupiedHeatingSetpoint(s) == 2150);
     REQUIRE(p.projectedOccupiedCoolingSetpoint(s) == 2250);
@@ -70,75 +82,104 @@ TEST_CASE("Auto mode synthesises band from autoSetpoint ± δ",
 TEST_CASE("Auto-band width is configurable", "[phase3][projector]")
 {
     Projector wide(ProjectorConfig{.autoBandHalfWidthCentiC = 100});
-    auto s = stateAt(SystemModeEnum::kAuto, 2000, 2400, 2200);
+    auto s = stateAt(true, OperationalMode::Auto, 2000, 2400, 2200);
 
     REQUIRE(wide.projectedOccupiedHeatingSetpoint(s) == 2100);
     REQUIRE(wide.projectedOccupiedCoolingSetpoint(s) == 2300);
 }
 
-// ─── RunningMode derivation ──────────────────────────────────────────────────
+// ─── Domain projection (no Matter translation) ───────────────────────────────
 
-TEST_CASE("RunningMode: Off when system mode is Off", "[phase3][projector]")
+TEST_CASE("projectedOnOff and projectedMode return the kernel's twin values",
+          "[phase3][projector]")
 {
     Projector p;
-    auto s = stateAt(SystemModeEnum::kOff, 2000, 2400, 2200);
-    REQUIRE(p.projectedRunningMode(s) == ThermostatRunningModeEnum::kOff);
+    auto on  = stateAt(true,  OperationalMode::Cool, 2000, 2400, 2200);
+    auto off = stateAt(false, OperationalMode::Heat, 2000, 2400, 2200);
+
+    REQUIRE(p.projectedOnOff(on)   == true);
+    REQUIRE(p.projectedMode(on)    == OperationalMode::Cool);
+    REQUIRE(p.projectedOnOff(off)  == false);
+    REQUIRE(p.projectedMode(off)   == OperationalMode::Heat);
 }
 
-TEST_CASE("RunningMode in Cool: kCool when indoor is above setpoint+hyst",
+// ─── RunningMode projection (just maps state.runningMode → domain enum) ──────
+
+TEST_CASE("RunningMode: Off when power is off, regardless of state.runningMode",
           "[phase3][projector]")
 {
-    Projector p(ProjectorConfig{.runningModeHysteresisCentiC = 50});
-    // Indoor 2500, setpoint 2400 → 2400+50 = 2450 < 2500 → kCool
-    auto active = stateAt(SystemModeEnum::kCool, 2000, 2400, 2200, /*indoor=*/2500);
-    REQUIRE(p.projectedRunningMode(active) == ThermostatRunningModeEnum::kCool);
-
-    // Indoor 2400, setpoint 2400 → 2400+50 = 2450 >= 2400 → kOff
-    auto idle = stateAt(SystemModeEnum::kCool, 2000, 2400, 2200, /*indoor=*/2400);
-    REQUIRE(p.projectedRunningMode(idle) == ThermostatRunningModeEnum::kOff);
+    Projector p;
+    auto s = stateAt(false, OperationalMode::Cool, 2000, 2400, 2200,
+                     /*indoor=*/2300, /*outdoor=*/1500, /*humidity=*/50,
+                     RunningMode::Cooling);
+    REQUIRE(p.projectedRunningMode(s) == RunningMode::Off);
 }
 
-TEST_CASE("RunningMode in Heat: kHeat when indoor is below setpoint-hyst",
+TEST_CASE("RunningMode: state.runningMode = Cooling → Cooling",
           "[phase3][projector]")
 {
-    Projector p(ProjectorConfig{.runningModeHysteresisCentiC = 50});
-    // Indoor 1900, setpoint 2000 → 2000-50 = 1950 > 1900 → kHeat
-    auto active = stateAt(SystemModeEnum::kHeat, 2000, 2400, 2200, /*indoor=*/1900);
-    REQUIRE(p.projectedRunningMode(active) == ThermostatRunningModeEnum::kHeat);
-
-    // Indoor 2000, setpoint 2000 → 2000-50 = 1950 <= 2000 → kOff
-    auto idle = stateAt(SystemModeEnum::kHeat, 2000, 2400, 2200, /*indoor=*/2000);
-    REQUIRE(p.projectedRunningMode(idle) == ThermostatRunningModeEnum::kOff);
+    Projector p;
+    auto s = stateAt(true, OperationalMode::Cool, 2000, 2400, 2200,
+                     /*indoor=*/2300, /*outdoor=*/1500, /*humidity=*/50,
+                     RunningMode::Cooling);
+    REQUIRE(p.projectedRunningMode(s) == RunningMode::Cooling);
 }
 
-TEST_CASE("RunningMode in Auto: derives kCool/kHeat/kOff from indoor vs auto target",
+TEST_CASE("RunningMode: state.runningMode = Heating → Heating",
           "[phase3][projector]")
 {
-    Projector p(ProjectorConfig{.runningModeHysteresisCentiC = 50});
+    Projector p;
+    auto s = stateAt(true, OperationalMode::Heat, 2000, 2400, 2200,
+                     /*indoor=*/2100, /*outdoor=*/1500, /*humidity=*/50,
+                     RunningMode::Heating);
+    REQUIRE(p.projectedRunningMode(s) == RunningMode::Heating);
+}
 
-    auto cooling  = stateAt(SystemModeEnum::kAuto, 2000, 2400, 2200, /*indoor=*/2300);
-    auto heating  = stateAt(SystemModeEnum::kAuto, 2000, 2400, 2200, /*indoor=*/2100);
-    auto deadband = stateAt(SystemModeEnum::kAuto, 2000, 2400, 2200, /*indoor=*/2200);
+TEST_CASE("RunningMode: state.runningMode = Off → Off (powered on, idle)",
+          "[phase3][projector]")
+{
+    Projector p;
+    auto s = stateAt(true, OperationalMode::Cool, 2000, 2400, 2200,
+                     /*indoor=*/2300, /*outdoor=*/1500, /*humidity=*/50,
+                     RunningMode::Off);
+    REQUIRE(p.projectedRunningMode(s) == RunningMode::Off);
+}
 
-    REQUIRE(p.projectedRunningMode(cooling)  == ThermostatRunningModeEnum::kCool);
-    REQUIRE(p.projectedRunningMode(heating)  == ThermostatRunningModeEnum::kHeat);
-    REQUIRE(p.projectedRunningMode(deadband) == ThermostatRunningModeEnum::kOff);
+TEST_CASE("RunningMode: tracks projected onOff while a power-off write is in flight",
+          "[phase3][projector]")
+{
+    // Faithful-UI policy: while there's no in-flight, the projection
+    // reflects desired. Once promoted to in-flight it reverts to observed
+    // until the device acknowledges. The RunningMode guard follows the
+    // same projectedOnOff policy so OnOff and RunningMode never disagree.
+    Projector p;
+    auto s = stateAt(true, OperationalMode::Cool, 2000, 2400, 2200,
+                     /*indoor=*/2500, /*outdoor=*/1500, /*humidity=*/50,
+                     RunningMode::Cooling);
+
+    // Controller intent to power off: desired=false, observed still true.
+    s.onOff.setDesired(false);
+    REQUIRE(p.projectedRunningMode(s) == RunningMode::Off);
+
+    // Once the write is in flight, we report what the device confirmed.
+    s.onOff.promoteDesiredToInFlight();
+    REQUIRE(p.projectedRunningMode(s) == RunningMode::Cooling);
 }
 
 // ─── FanControl projection ───────────────────────────────────────────────────
 
-TEST_CASE("FanControl: SpeedSetting nullopt ↔ FanMode kAuto with mid-range SpeedCurrent",
+TEST_CASE("FanControl: SpeedSetting nullopt ↔ fanIsAuto with mid-range SpeedCurrent",
           "[phase3][projector]")
 {
     Projector p;
-    auto s = stateAt(SystemModeEnum::kCool, 2000, 2400, 2200);
+    auto s = stateAt(true, OperationalMode::Cool, 2000, 2400, 2200);
     // Default fan is std::nullopt → Auto.
     REQUIRE_FALSE(p.projectedSpeedSetting(s).has_value());
-    REQUIRE(p.projectedFanMode(s)     == FanModeEnum::kAuto);
+    REQUIRE(p.projectedFanIsAuto(s) == true);
     REQUIRE(p.projectedSpeedCurrent(s) == 3);
 }
 
-TEST_CASE("FanControl: SpeedSetting present → FanMode kOn, SpeedCurrent mirrors setting",
+TEST_CASE("FanControl: SpeedSetting present → fanIsAuto=false, SpeedCurrent mirrors setting",
           "[phase3][projector]")
 {
     Projector p;
@@ -148,7 +189,7 @@ TEST_CASE("FanControl: SpeedSetting present → FanMode kOn, SpeedCurrent mirror
 
     REQUIRE(p.projectedSpeedSetting(s).has_value());
     REQUIRE(*p.projectedSpeedSetting(s) == FanLevel::MidHigh);
-    REQUIRE(p.projectedFanMode(s)       == FanModeEnum::kOn);
+    REQUIRE(p.projectedFanIsAuto(s)     == false);
     REQUIRE(p.projectedSpeedCurrent(s)  == 5);
 }
 
@@ -164,53 +205,13 @@ TEST_CASE("LocalTemperature: nullopt before any observation; observed value pass
     REQUIRE_FALSE(p.projectedLocalTemperature(fresh).has_value());
 
     // A genuine 0.00 °C reading is reported as 0, not null.
-    auto z = stateAt(SystemModeEnum::kCool, 2000, 2400, 2200, /*indoor=*/0);
+    auto z = stateAt(true, OperationalMode::Cool, 2000, 2400, 2200, /*indoor=*/0);
     REQUIRE(p.projectedLocalTemperature(z).has_value());
     REQUIRE(*p.projectedLocalTemperature(z) == 0);
 
-    auto t = stateAt(SystemModeEnum::kCool, 2000, 2400, 2200, /*indoor=*/2350);
+    auto t = stateAt(true, OperationalMode::Cool, 2000, 2400, 2200, /*indoor=*/2350);
     REQUIRE(p.projectedLocalTemperature(t).has_value());
     REQUIRE(*p.projectedLocalTemperature(t) == 2350);
-}
-
-TEST_CASE("RunningMode: kOff when no indoor temperature observation",
-          "[phase3][projector]")
-{
-    Projector p;
-    LogicalACStateDefaults d;
-    d.onOff = true;
-    d.mode  = SystemModeEnum::kCool; // a mode that normally consults indoor
-    LogicalACState s(d);
-    REQUIRE(p.projectedRunningMode(s) == ThermostatRunningModeEnum::kOff);
-}
-
-TEST_CASE("RunningMode: kOff when device is powered off, regardless of mode",
-          "[phase3][projector]")
-{
-    Projector p(ProjectorConfig{.runningModeHysteresisCentiC = 50});
-    // Indoor 2500 vs cool setpoint 2400 would normally project kCool.
-    auto s = stateAt(SystemModeEnum::kCool, 2000, 2400, 2200, /*indoor=*/2500);
-    s.onOff.applyObservation(false, ObservationSource::Device);
-    REQUIRE(p.projectedRunningMode(s) == ThermostatRunningModeEnum::kOff);
-}
-
-TEST_CASE("RunningMode: tracks desired onOff while a write is in flight",
-          "[phase3][projector]")
-{
-    // Faithful-UI policy: with no in-flight, projection reflects desired;
-    // once promoted to in-flight it reverts to observed until the device
-    // acknowledges. Same as projectedOnOff. The RunningMode guard must
-    // follow that policy so OnOff and RunningMode never disagree.
-    Projector p(ProjectorConfig{.runningModeHysteresisCentiC = 50});
-    auto s = stateAt(SystemModeEnum::kCool, 2000, 2400, 2200, /*indoor=*/2500);
-
-    // Controller intent to power off: desired=false, observed still true.
-    s.onOff.setDesired(false);
-    REQUIRE(p.projectedRunningMode(s) == ThermostatRunningModeEnum::kOff);
-
-    // Once the write is in flight, we report what the device confirmed.
-    s.onOff.promoteDesiredToInFlight();
-    REQUIRE(p.projectedRunningMode(s) == ThermostatRunningModeEnum::kCool);
 }
 
 TEST_CASE("HumidityCentiPercent: nullopt before any observation; ×100 of observed % otherwise",
@@ -230,136 +231,94 @@ TEST_CASE("HumidityCentiPercent: nullopt before any observation; ×100 of observ
 
 // ─── Diff ────────────────────────────────────────────────────────────────────
 
-TEST_CASE("diffProjections emits only the cluster attributes that changed",
+TEST_CASE("diffProjections emits only the LogicalAttribute values that changed",
           "[phase3][projector][diff]")
 {
     Projector p;
-    auto a = stateAt(SystemModeEnum::kCool, 2000, 2400, 2200, /*indoor=*/2300);
-    auto b = stateAt(SystemModeEnum::kCool, 2000, 2500, 2200, /*indoor=*/2300);
+    auto a = stateAt(true, OperationalMode::Cool, 2000, 2400, 2200, /*indoor=*/2300);
+    auto b = stateAt(true, OperationalMode::Cool, 2000, 2500, 2200, /*indoor=*/2300);
 
-    auto paths = diffProjections(p.project(a), p.project(b), /*endpoint=*/1);
-    REQUIRE(paths.size() == 1);
-    REQUIRE(paths[0].endpoint  == 1);
-    REQUIRE(paths[0].cluster   == chip::app::Clusters::Thermostat::Id);
-    REQUIRE(paths[0].attribute ==
-            chip::app::Clusters::Thermostat::Attributes::OccupiedCoolingSetpoint::Id);
-}
-
-// ─── refrigerantValveOpen signal ─────────────────────────────────────────────
-
-namespace {
-
-// Apply a valve observation to a copy of the state and return it.
-LogicalACState withValve(LogicalACState s, std::optional<bool> valve)
-{
-    s.refrigerantValveOpen.applyObservation(valve);
-    return s;
-}
-
-} // namespace
-
-TEST_CASE("RunningMode: valve=false → kOff, overrides temperature heuristic in Cool mode",
-          "[projector][valve]")
-{
-    Projector p(ProjectorConfig{.runningModeHysteresisCentiC = 50});
-    // indoor=2600 vs cool setpoint=2400: heuristic would say kCool (2400+50=2450 < 2600)
-    auto s = withValve(stateAt(SystemModeEnum::kCool, 2000, 2400, 2200, /*indoor=*/2600),
-                       std::optional<bool>{false});
-    REQUIRE(p.projectedRunningMode(s) == ThermostatRunningModeEnum::kOff);
-}
-
-TEST_CASE("RunningMode: valve=false → kOff, overrides temperature heuristic in Heat mode",
-          "[projector][valve]")
-{
-    Projector p(ProjectorConfig{.runningModeHysteresisCentiC = 50});
-    // indoor=1800 vs heat setpoint=2000: heuristic would say kHeat (2000-50=1950 > 1800)
-    auto s = withValve(stateAt(SystemModeEnum::kHeat, 2000, 2400, 2200, /*indoor=*/1800),
-                       std::optional<bool>{false});
-    REQUIRE(p.projectedRunningMode(s) == ThermostatRunningModeEnum::kOff);
-}
-
-TEST_CASE("RunningMode: valve=true → kCool in Cool mode, regardless of temperature",
-          "[projector][valve]")
-{
-    Projector p(ProjectorConfig{.runningModeHysteresisCentiC = 50});
-    // indoor=2300 vs cool setpoint=2400: heuristic would say kOff (2400+50=2450 >= 2300)
-    auto s = withValve(stateAt(SystemModeEnum::kCool, 2000, 2400, 2200, /*indoor=*/2300),
-                       std::optional<bool>{true});
-    REQUIRE(p.projectedRunningMode(s) == ThermostatRunningModeEnum::kCool);
-}
-
-TEST_CASE("RunningMode: valve=true → kHeat in Heat mode, regardless of temperature",
-          "[projector][valve]")
-{
-    Projector p(ProjectorConfig{.runningModeHysteresisCentiC = 50});
-    // indoor=2100 vs heat setpoint=2000: heuristic would say kOff (2000-50=1950 <= 2100)
-    auto s = withValve(stateAt(SystemModeEnum::kHeat, 2000, 2400, 2200, /*indoor=*/2100),
-                       std::optional<bool>{true});
-    REQUIRE(p.projectedRunningMode(s) == ThermostatRunningModeEnum::kHeat);
-}
-
-TEST_CASE("RunningMode: valve=nullopt falls back to temperature heuristic (kCool)",
-          "[projector][valve]")
-{
-    Projector p(ProjectorConfig{.runningModeHysteresisCentiC = 50});
-    // indoor=2600 > 2400+50=2450 → kCool from heuristic
-    auto s = withValve(stateAt(SystemModeEnum::kCool, 2000, 2400, 2200, /*indoor=*/2600),
-                       std::nullopt);
-    REQUIRE(p.projectedRunningMode(s) == ThermostatRunningModeEnum::kCool);
-}
-
-TEST_CASE("RunningMode: valve=nullopt falls back to temperature heuristic (kOff)",
-          "[projector][valve]")
-{
-    Projector p(ProjectorConfig{.runningModeHysteresisCentiC = 50});
-    // indoor=2300 ≤ 2400+50=2450 → kOff from heuristic
-    auto s = withValve(stateAt(SystemModeEnum::kCool, 2000, 2400, 2200, /*indoor=*/2300),
-                       std::nullopt);
-    REQUIRE(p.projectedRunningMode(s) == ThermostatRunningModeEnum::kOff);
-}
-
-TEST_CASE("RunningMode: valve=true in Auto mode still uses temperature heuristic",
-          "[projector][valve]")
-{
-    Projector p(ProjectorConfig{.runningModeHysteresisCentiC = 50});
-    // Valve open but direction unknown in Auto; indoor=2600 > autoSetpoint=2200+50=2250 → kCool
-    auto s = withValve(stateAt(SystemModeEnum::kAuto, 2000, 2400, 2200, /*indoor=*/2600),
-                       std::optional<bool>{true});
-    REQUIRE(p.projectedRunningMode(s) == ThermostatRunningModeEnum::kCool);
-}
-
-TEST_CASE("RunningMode: valve=false in Auto mode → kOff, overrides temperature heuristic",
-          "[projector][valve]")
-{
-    Projector p(ProjectorConfig{.runningModeHysteresisCentiC = 50});
-    // indoor=2600 vs auto setpoint=2200: heuristic would say kCool, but valve=false wins
-    auto s = withValve(stateAt(SystemModeEnum::kAuto, 2000, 2400, 2200, /*indoor=*/2600),
-                       std::optional<bool>{false});
-    REQUIRE(p.projectedRunningMode(s) == ThermostatRunningModeEnum::kOff);
+    auto attrs = diffProjections(p.project(a), p.project(b));
+    REQUIRE(attrs.size() == 1);
+    REQUIRE(attrs[0] == LogicalAttribute::OccupiedCoolingSetpoint);
 }
 
 TEST_CASE("diffProjections returns empty when projections are equal",
           "[phase3][projector][diff]")
 {
     Projector p;
-    auto s = stateAt(SystemModeEnum::kCool, 2000, 2400, 2200);
-    REQUIRE(diffProjections(p.project(s), p.project(s), /*endpoint=*/1).empty());
+    auto s = stateAt(true, OperationalMode::Cool, 2000, 2400, 2200);
+    REQUIRE(diffProjections(p.project(s), p.project(s)).empty());
+}
+
+TEST_CASE("OnOff change emits both OnOff and SystemMode (controller-visible SystemMode is derived)",
+          "[phase3][projector][diff]")
+{
+    Projector p;
+    auto on  = stateAt(true,  OperationalMode::Cool, 2000, 2400, 2200);
+    auto off = stateAt(false, OperationalMode::Cool, 2000, 2400, 2200);
+
+    auto attrs = diffProjections(p.project(on), p.project(off));
+    REQUIRE(contains(attrs, LogicalAttribute::OnOff));
+    REQUIRE(contains(attrs, LogicalAttribute::SystemMode));
+}
+
+TEST_CASE("Mode change (power on) emits SystemMode and not OnOff",
+          "[phase3][projector][diff]")
+{
+    Projector p;
+    auto cool = stateAt(true, OperationalMode::Cool, 2000, 2400, 2200);
+    auto heat = stateAt(true, OperationalMode::Heat, 2000, 2400, 2200);
+
+    auto attrs = diffProjections(p.project(cool), p.project(heat));
+    REQUIRE_FALSE(contains(attrs, LogicalAttribute::OnOff));
+    REQUIRE(contains(attrs, LogicalAttribute::SystemMode));
 }
 
 TEST_CASE("Auto-band mode flip yields heating/cooling/system-mode dirty attrs",
           "[phase3][projector][diff]")
 {
     Projector p;
-    auto cool = stateAt(SystemModeEnum::kCool, 2000, 2400, 2200);
-    auto auto_ = stateAt(SystemModeEnum::kAuto, 2000, 2400, 2200);
+    auto cool  = stateAt(true, OperationalMode::Cool, 2000, 2400, 2200);
+    auto auto_ = stateAt(true, OperationalMode::Auto, 2000, 2400, 2200);
 
-    auto paths = diffProjections(p.project(cool), p.project(auto_), /*endpoint=*/1);
-    // SystemMode, OccupiedHeating, OccupiedCooling all differ.
-    auto contains = [&](chip::AttributeId a) {
-        for (auto& p : paths) if (p.attribute == a) return true;
-        return false;
-    };
-    REQUIRE(contains(chip::app::Clusters::Thermostat::Attributes::SystemMode::Id));
-    REQUIRE(contains(chip::app::Clusters::Thermostat::Attributes::OccupiedHeatingSetpoint::Id));
-    REQUIRE(contains(chip::app::Clusters::Thermostat::Attributes::OccupiedCoolingSetpoint::Id));
+    auto attrs = diffProjections(p.project(cool), p.project(auto_));
+    REQUIRE(contains(attrs, LogicalAttribute::SystemMode));
+    REQUIRE(contains(attrs, LogicalAttribute::OccupiedHeatingSetpoint));
+    REQUIRE(contains(attrs, LogicalAttribute::OccupiedCoolingSetpoint));
+}
+
+TEST_CASE("Fan speed nullopt→value flip emits FanMode (Auto bit changes)",
+          "[phase3][projector][diff]")
+{
+    Projector p;
+    LogicalACStateDefaults a;
+    a.onOff = true; a.mode = OperationalMode::Cool;
+    LogicalACStateDefaults b = a;
+    b.fan = FanLevel::Medium;
+
+    LogicalACState before{a};
+    LogicalACState after{b};
+
+    auto attrs = diffProjections(p.project(before), p.project(after));
+    REQUIRE(contains(attrs, LogicalAttribute::SpeedSetting));
+    REQUIRE(contains(attrs, LogicalAttribute::FanMode));
+    REQUIRE(contains(attrs, LogicalAttribute::SpeedCurrent));
+}
+
+TEST_CASE("Fan speed level→level change emits SpeedSetting and SpeedCurrent but NOT FanMode",
+          "[phase3][projector][diff]")
+{
+    Projector p;
+    LogicalACStateDefaults a;
+    a.onOff = true; a.mode = OperationalMode::Cool; a.fan = FanLevel::Low;
+    LogicalACStateDefaults b = a; b.fan = FanLevel::High;
+
+    LogicalACState before{a};
+    LogicalACState after{b};
+
+    auto attrs = diffProjections(p.project(before), p.project(after));
+    REQUIRE(contains(attrs, LogicalAttribute::SpeedSetting));
+    REQUIRE(contains(attrs, LogicalAttribute::SpeedCurrent));
+    REQUIRE_FALSE(contains(attrs, LogicalAttribute::FanMode));
 }

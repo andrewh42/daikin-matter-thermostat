@@ -5,9 +5,9 @@
  */
 
 #include "airconditioner_manager.h"
+#include "sync/aai_translation.h"
 #include "sync/s21_observation.h"
-#include "sync/sync_reader.h"
-#include "sync/sync_stack.h"
+#include "sync/sync_coordinator.h"
 
 #include "app/task_executor.h"
 
@@ -64,27 +64,26 @@ void AirConditionerManager::PowerIndicator::Set(bool onOff)
 }
 
 void AirConditionerManager::PowerIndicator::OnChangedAttributes(
-    const std::vector<sync::MatterAttributePath>& paths)
+    const std::vector<sync::LogicalAttribute>& attributes)
 {
-    for (const auto& p : paths) {
-        if (p.cluster   == chip::app::Clusters::OnOff::Id &&
-            p.attribute == chip::app::Clusters::OnOff::Attributes::OnOff::Id) {
+    for (auto attr : attributes) {
+        if (attr == sync::LogicalAttribute::OnOff) {
             // Both gpio_pin_set_dt and ReadOnOff are thread-safe and
             // don't touch the CHIP stack lock, so this runs synchronously
             // on whichever thread dispatched the listener.
-            Set(mOwner.mSyncStack->Reader().ReadOnOff());
+            Set(mOwner.mSyncCoordinator->ReadOnOff());
             return;
         }
     }
 }
 
-// ─── MatterReportListener: dirty-path queue + drain ─────────────────────────
+// ─── MatterReportListener: dirty-attribute queue + drain ────────────────────
 
 void AirConditionerManager::MatterAttributeChangeReporter::OnChangedAttributes(
-    const std::vector<sync::MatterAttributePath>& paths)
+    const std::vector<sync::LogicalAttribute>& attributes)
 {
     k_mutex_lock(&mQueueMutex, K_FOREVER);
-    mQueue.insert(mQueue.end(), paths.begin(), paths.end());
+    mQueue.insert(mQueue.end(), attributes.begin(), attributes.end());
     k_mutex_unlock(&mQueueMutex);
 
     Nrf::PostTask([this] { DrainOnMatterEventLoop(); });
@@ -92,30 +91,35 @@ void AirConditionerManager::MatterAttributeChangeReporter::OnChangedAttributes(
 
 void AirConditionerManager::MatterAttributeChangeReporter::DrainOnMatterEventLoop()
 {
-    std::vector<sync::MatterAttributePath> local;
+    std::vector<sync::LogicalAttribute> local;
     k_mutex_lock(&mQueueMutex, K_FOREVER);
     local.swap(mQueue);
     k_mutex_unlock(&mQueueMutex);
     if (local.empty()) return;
 
     PlatformMgr().LockChipStack();
-    for (const auto& p : local) {
-        MatterReportingAttributeChangeCallback(p.endpoint, p.cluster, p.attribute);
+    for (auto attr : local) {
+        const auto [cluster, attribute] = sync_aai::toMatterAddress(attr);
+        // The {0,0} sentinel marks attributes without a Matter address yet
+        // (currently only BridgedDeviceBasicInformation::Reachable, pending
+        // Phase 8 ZAP work). Skip those rather than emitting a bogus report.
+        if (cluster == 0 && attribute == 0) continue;
+        MatterReportingAttributeChangeCallback(kThermostatEndpoint, cluster, attribute);
     }
     PlatformMgr().UnlockChipStack();
 }
 
 // ─── Init / lifecycle ────────────────────────────────────────────────────────
 
-CHIP_ERROR AirConditionerManager::Init(S21Manager& s21Manager, sync::SyncStack& syncStack)
+CHIP_ERROR AirConditionerManager::Init(S21Manager& s21Manager, sync::SyncCoordinator& syncStack)
 {
     mS21Manager = &s21Manager;
-    mSyncStack  = &syncStack;
+    mSyncCoordinator  = &syncStack;
 
     // Configure LED0 and drive it to the current OnOff before registering
     // the listener — a dispatch arriving before Init returns would
     // otherwise fire gpio_pin_set_dt on an unconfigured pin.
-    if (mPowerIndicator.Init(mSyncStack->Reader().ReadOnOff()) != 0) {
+    if (mPowerIndicator.Init(mSyncCoordinator->ReadOnOff()) != 0) {
         return CHIP_ERROR_INTERNAL;
     }
 
@@ -126,12 +130,12 @@ CHIP_ERROR AirConditionerManager::Init(S21Manager& s21Manager, sync::SyncStack& 
     k_work_init_delayable(&mInitRetryWork, InitRetryWorkHandler);
     k_work_init_delayable(&mCommandWork,   CommandWorkHandler);
 
-    // Wire up SyncStack so AAI Writes and Polls schedule the right
+    // Wire up SyncCoordinator so AAI Writes and Polls schedule the right
     // follow-up work. The pump handler is a static fn; the two listeners
     // are nested-class members that reach mOwner for context.
-    mSyncStack->SetCommandPumpHandler(&AirConditionerManager::ScheduleS21CommandHandler);
-    ReturnErrorOnFailure(mSyncStack->AddChangedAttributesListener(&mMatterAttributeChangeReporter));
-    ReturnErrorOnFailure(mSyncStack->AddChangedAttributesListener(&mPowerIndicator));
+    mSyncCoordinator->SetCommandPumpHandler(&AirConditionerManager::ScheduleS21CommandHandler);
+    ReturnErrorOnFailure(mSyncCoordinator->AddChangedAttributesListener(&mMatterAttributeChangeReporter));
+    ReturnErrorOnFailure(mSyncCoordinator->AddChangedAttributesListener(&mPowerIndicator));
 
     if (mS21Manager->Init() == 0) {
         k_work_reschedule_for_queue(&mS21WorkQueue, &mPollWork, K_NO_WAIT);
@@ -166,7 +170,7 @@ void AirConditionerManager::Poll()
     PollEnvironmentalPhase();
     PollOperationalPhase();
     // Dirty-attribute flush, command-pump scheduling, and the LED side
-    // effect for OnOff transitions are all handled by the SyncStack hooks
+    // effect for OnOff transitions are all handled by the SyncCoordinator hooks
     // installed in Init().
 }
 
@@ -191,7 +195,7 @@ void AirConditionerManager::PollEnvironmentalPhase()
     // next one ~2 minutes later.
     if (!indoor || !outdoor || !humidity) return;
 
-    mSyncStack->ApplyEnvironmentalObservation(sync::S21EnvironmentalObservation{
+    mSyncCoordinator->ApplyEnvironmentalObservation(sync::S21EnvironmentalObservation{
         .indoorTemperatureCelsius      = *indoor,
         .outdoorTemperatureCelsius     = *outdoor,
         .indoorRelativeHumidityPercent = *humidity,
@@ -208,7 +212,7 @@ void AirConditionerManager::PollOperationalPhase()
         if (++mConsecutivePollFailures >= kReachableFailureThreshold) {
             LOG_WRN("S21 link unresponsive after %d polls; marking unreachable",
                     mConsecutivePollFailures);
-            mSyncStack->NotifyLinkDown();
+            mSyncCoordinator->NotifyLinkDown();
         }
         return;
     }
@@ -226,7 +230,7 @@ void AirConditionerManager::PollOperationalPhase()
         else            refrigerantValveOpen = unitState->refrigerantValveOpen;
     }
 
-    mSyncStack->ApplyOperationalObservation(sync::S21OperationalObservation{
+    mSyncCoordinator->ApplyOperationalObservation(sync::S21OperationalObservation{
         .onOff                = onOff,
         .operatingMode        = mode,
         .setpointCelsius      = setpoint,
@@ -271,7 +275,7 @@ void AirConditionerManager::CommandWorkHandler(k_work* work)
     auto* dwork = k_work_delayable_from_work(work);
     auto& self  = *CONTAINER_OF(dwork, AirConditionerManager, mCommandWork);
 
-    auto cmd = self.mSyncStack->PendingCommand();
+    auto cmd = self.mSyncCoordinator->PendingCommand();
     if (!cmd.has_value()) return;
 
     LOG_INF("Sending setOperation(onOff=%s, mode=%u, setpoint=%d, fan=%u) to S21",
@@ -283,70 +287,66 @@ void AirConditionerManager::CommandWorkHandler(k_work* work)
     auto result = self.mS21Manager->setOperation(
         cmd->onOff, cmd->operatingMode, cmd->setpointCelsius, cmd->fanMode);
     if (result) {
-        self.mSyncStack->OnCommandSent(*cmd);
+        self.mSyncCoordinator->OnCommandSent(*cmd);
     } else {
         LOG_WRN("setOperation failed: %s", result.error().message);
-        self.mSyncStack->OnCommandFailed();
+        self.mSyncCoordinator->OnCommandFailed();
     }
 }
 
 // ─── Cached sensor reads (used by external thermostat readback) ──────────────
 
-chip::app::DataModel::Nullable<int16_t> AirConditionerManager::GetLocalTemp()
+std::optional<int16_t> AirConditionerManager::GetLocalTemp()
 {
-    return mSyncStack->Reader().ReadLocalTemperature();
+    return mSyncCoordinator->ReadLocalTemperature();
 }
 
-chip::app::DataModel::Nullable<int16_t> AirConditionerManager::GetOutdoorTemp()
+std::optional<int16_t> AirConditionerManager::GetOutdoorTemp()
 {
-    return mSyncStack->Reader().ReadOutdoorTemperature();
+    return mSyncCoordinator->ReadOutdoorTemperature();
 }
 
 // ─── Debug logging (Button 2) ────────────────────────────────────────────────
 
-const char* AirConditionerManager::GetSystemModeStr(
-    Thermostat::SystemModeEnum mode)
+const char* AirConditionerManager::GetOperationalModeStr(sync::OperationalMode mode)
 {
     switch (mode) {
-    case Thermostat::SystemModeEnum::kOff:           return "Off";
-    case Thermostat::SystemModeEnum::kAuto:          return "Auto";
-    case Thermostat::SystemModeEnum::kCool:          return "Cool";
-    case Thermostat::SystemModeEnum::kHeat:          return "Heat";
-    case Thermostat::SystemModeEnum::kEmergencyHeat: return "Emergency Heat";
-    case Thermostat::SystemModeEnum::kPrecooling:    return "Precooling";
-    case Thermostat::SystemModeEnum::kFanOnly:       return "Fan Only";
-    case Thermostat::SystemModeEnum::kDry:           return "Dry";
-    case Thermostat::SystemModeEnum::kSleep:         return "Sleep";
-    default:                                         return "Unknown";
+    case sync::OperationalMode::Auto:    return "Auto";
+    case sync::OperationalMode::Cool:    return "Cool";
+    case sync::OperationalMode::Heat:    return "Heat";
+    case sync::OperationalMode::FanOnly: return "Fan Only";
+    case sync::OperationalMode::Dry:     return "Dry";
     }
+    return "Unknown";
 }
 
-const char* AirConditionerManager::GetRunningModeStr(
-    Thermostat::ThermostatRunningModeEnum mode)
+const char* AirConditionerManager::GetRunningModeStr(sync::RunningMode mode)
 {
     switch (mode) {
-    case Thermostat::ThermostatRunningModeEnum::kOff:  return "Off";
-    case Thermostat::ThermostatRunningModeEnum::kCool: return "Cool";
-    case Thermostat::ThermostatRunningModeEnum::kHeat: return "Heat";
-    default:                                           return "Unknown";
+    case sync::RunningMode::Off:     return "Off";
+    case sync::RunningMode::Cooling: return "Cooling";
+    case sync::RunningMode::Heating: return "Heating";
     }
+    return "Unknown";
 }
 
 void AirConditionerManager::LogThermostatStatus()
 {
-    const auto& r = mSyncStack->Reader();
+    auto& r = *mSyncCoordinator;
     LOG_INF("Thermostat (bridge view):");
-    LOG_INF("  Mode - %s",       GetSystemModeStr(r.ReadSystemMode()));
+    LOG_INF("  Power - %s",      r.ReadOnOff() ? "On" : "Off");
+    LOG_INF("  Mode  - %s",      GetOperationalModeStr(r.ReadMode()));
+    LOG_INF("  Run   - %s",      GetRunningModeStr(r.ReadRunningMode()));
     auto local = r.ReadLocalTemperature();
     auto outdoor = r.ReadOutdoorTemperature();
-    if (!local.IsNull())
+    if (local.has_value())
         LOG_INF("  LocalTemperature   - %d,%d'C",
-                ReturnCompleteValue(local.Value()), ReturnRemainderValue(local.Value()));
+                ReturnCompleteValue(*local), ReturnRemainderValue(*local));
     else
         LOG_INF("  LocalTemperature   - No Value");
-    if (!outdoor.IsNull())
+    if (outdoor.has_value())
         LOG_INF("  OutdoorTemperature - %d,%d'C",
-                ReturnCompleteValue(outdoor.Value()), ReturnRemainderValue(outdoor.Value()));
+                ReturnCompleteValue(*outdoor), ReturnRemainderValue(*outdoor));
     else
         LOG_INF("  OutdoorTemperature - No Value");
     const int16_t heat = r.ReadOccupiedHeatingSetpoint();

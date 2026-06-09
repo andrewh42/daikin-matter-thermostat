@@ -9,11 +9,18 @@
  * send a device command or mark a cluster attribute dirty.
  *
  * Observation-only fields (indoor/outdoor temperature, humidity,
- * refrigerantValveOpen, reachable) are SensorFields. Matter never writes
- * them, so the desired/in-flight halves of a twin would be dead weight;
- * SensorField encodes that asymmetry in the type system.
+ * refrigerantValveOpen, runningMode, reachable) are SensorFields. Matter
+ * never writes them, so the desired/in-flight halves of a twin would be
+ * dead weight; SensorField encodes that asymmetry in the type system.
  *
- * Two further things to know:
+ * Three further things to know:
+ *
+ *  - Power is its own axis, separate from operating mode. The cluster-side
+ *    SystemModeEnum collapses `kOff` into power-off; here, `onOff=false`
+ *    means powered down and `mode` retains whatever the controller last
+ *    selected (so a mode flip back to On returns to a familiar setting).
+ *    This matches the S21 device's internal model (independent on/off and
+ *    mode commands).
  *
  *  - The Auto setpoint is the *real* device target temperature in Auto
  *    mode. The Matter cluster exposes a band as (autoSetpoint − δ,
@@ -22,23 +29,27 @@
  *    single autoSetpoint update on write. See sync-analysis §4.6 and the
  *    Phase 3 projector tests.
  *
- *  - The class is pure data + tiny accessors. The reconciler owns all
- *    policy. This keeps the type host-testable without dragging in CHIP
- *    types or Zephyr.
+ *  - runningMode captures what the device is currently *doing* (off /
+ *    cooling / heating), as opposed to what mode it is *in*. Populated by
+ *    the reconciler from a fusion of S21's Auto_Cooling/Auto_Heating
+ *    direction signal, refrigerantValveOpen (when reported), and
+ *    indoor/setpoint hysteresis. Projects to ThermostatRunningMode at
+ *    the AAI boundary.
+ *
+ * The class is pure data + tiny accessors. The reconciler owns all
+ * policy. This keeps the type host-testable without dragging in CHIP types
+ * or Zephyr.
  */
 #pragma once
 
+#include "operational_mode.h"
 #include "sensor_field.h"
 #include "twin_field.h"
-
-#include <app-common/zap-generated/attributes/Accessors.h>
 
 #include <cstdint>
 #include <optional>
 
 namespace sync {
-
-using SystemModeEnum = chip::app::Clusters::Thermostat::SystemModeEnum;
 
 /// Named S21 fan-speed levels. Underlying values match the Matter
 /// FanControl::SpeedSetting wire format (1..SpeedMax), so the AAI's
@@ -63,17 +74,18 @@ using FanSpeed = std::optional<FanLevel>;
 /// drive both the production constructor and per-test setup without
 /// surprising defaulted-member behaviour.
 struct LogicalACStateDefaults {
-    bool           onOff         = false;
-    SystemModeEnum mode          = SystemModeEnum::kOff;
-    int16_t        heatSetpoint  = 2000; ///< 0.01 °C
-    int16_t        coolSetpoint  = 2500; ///< 0.01 °C
-    int16_t        autoSetpoint  = 2200; ///< 0.01 °C — midpoint of Auto band
-    FanSpeed       fan           = std::nullopt;
+    bool             onOff         = false;
+    OperationalMode  mode          = OperationalMode::Auto;
+    int16_t          heatSetpoint  = 2000; ///< 0.01 °C
+    int16_t          coolSetpoint  = 2500; ///< 0.01 °C
+    int16_t          autoSetpoint  = 2200; ///< 0.01 °C — midpoint of Auto band
+    FanSpeed         fan           = std::nullopt;
+    RunningMode      runningMode   = RunningMode::Off;
     std::optional<int16_t> indoorTemp    = std::nullopt;
     std::optional<int16_t> outdoorTemp   = std::nullopt;
     std::optional<uint8_t> humidity      = std::nullopt;
     std::optional<bool>    refrigerantValveOpen = std::nullopt;
-    bool           reachable     = false;
+    bool             reachable     = false;
 };
 
 struct LogicalACState {
@@ -84,6 +96,7 @@ struct LogicalACState {
           coolSetpoint(d.coolSetpoint),
           autoSetpoint(d.autoSetpoint),
           fan(d.fan),
+          runningMode(d.runningMode),
           indoorTemp(d.indoorTemp),
           outdoorTemp(d.outdoorTemp),
           humidity(d.humidity),
@@ -92,13 +105,14 @@ struct LogicalACState {
     {
     }
 
-    TwinField<bool>           onOff;
-    TwinField<SystemModeEnum> mode;
-    TwinField<int16_t>        heatSetpoint;
-    TwinField<int16_t>        coolSetpoint;
-    TwinField<int16_t>        autoSetpoint;
-    TwinField<FanSpeed>       fan;
+    TwinField<bool>            onOff;
+    TwinField<OperationalMode> mode;
+    TwinField<int16_t>         heatSetpoint;
+    TwinField<int16_t>         coolSetpoint;
+    TwinField<int16_t>         autoSetpoint;
+    TwinField<FanSpeed>        fan;
 
+    SensorField<RunningMode>            runningMode;
     SensorField<std::optional<int16_t>> indoorTemp;
     SensorField<std::optional<int16_t>> outdoorTemp;
     SensorField<std::optional<uint8_t>> humidity;
@@ -106,21 +120,23 @@ struct LogicalACState {
     SensorField<bool>                   reachable;
 
     /// The setpoint twin currently in charge of the device's target T,
-    /// given a system mode. Auto returns the auto-shadow; Cool/Heat return
-    /// their respective edges. Modes without a setpoint concept (Off, Dry,
-    /// FanOnly, …) return the Auto shadow so callers always get *something*
-    /// without UB; the reconciler is expected not to consult this for those
-    /// modes.
-    TwinField<int16_t>& activeSetpoint(SystemModeEnum m)
+    /// given an operating mode. Auto returns the auto-shadow; Cool/Heat
+    /// return their respective edges. Modes without a setpoint concept
+    /// (Dry, FanOnly) return the Auto shadow so callers always get
+    /// *something* without UB; the reconciler is expected not to consult
+    /// this for those modes.
+    TwinField<int16_t>& activeSetpoint(OperationalMode m)
     {
         switch (m) {
-        case SystemModeEnum::kCool:        return coolSetpoint;
-        case SystemModeEnum::kHeat:        return heatSetpoint;
-        case SystemModeEnum::kAuto:        return autoSetpoint;
-        default:                           return autoSetpoint;
+        case OperationalMode::Cool: return coolSetpoint;
+        case OperationalMode::Heat: return heatSetpoint;
+        case OperationalMode::Auto:
+        case OperationalMode::Dry:
+        case OperationalMode::FanOnly:
+        default:                    return autoSetpoint;
         }
     }
-    const TwinField<int16_t>& activeSetpoint(SystemModeEnum m) const
+    const TwinField<int16_t>& activeSetpoint(OperationalMode m) const
     {
         return const_cast<LogicalACState*>(this)->activeSetpoint(m);
     }

@@ -18,7 +18,6 @@
 #include <vector>
 
 using namespace sync;
-using SystemModeEnum = chip::app::Clusters::Thermostat::SystemModeEnum;
 
 namespace {
 
@@ -29,7 +28,7 @@ struct Transcript {
     struct Entry {
         std::optional<S21OperationCommand> sendCommand;
         size_t                             dirtyCount;
-        std::vector<MatterAttributePath>   dirty;
+        std::vector<LogicalAttribute>      dirty;
     };
     std::vector<Entry> entries;
     void record(const OperationalChange& c) {
@@ -37,17 +36,12 @@ struct Transcript {
     }
 };
 
-bool transcriptContainsAttribute(const Transcript& t,
-                                 chip::ClusterId   cluster,
-                                 chip::AttributeId attr,
-                                 size_t            entryIdx)
+bool transcriptContainsAttribute(const Transcript& t, LogicalAttribute attr, size_t entryIdx)
 {
     if (entryIdx >= t.entries.size()) return false;
     return std::any_of(t.entries[entryIdx].dirty.begin(),
                        t.entries[entryIdx].dirty.end(),
-                       [&](const MatterAttributePath& p) {
-                           return p.cluster == cluster && p.attribute == attr;
-                       });
+                       [&](LogicalAttribute a) { return a == attr; });
 }
 
 S21OperationalObservation opPoll(bool onOff, OperatingMode mode, int16_t setpoint,
@@ -65,7 +59,7 @@ TEST_CASE("Integration: poll/intent/poll/intent/poll converges with one D1 per i
 {
     ManualTimeSource time;
     LogicalACState   state(LogicalACStateDefaults{
-        .onOff = true, .mode = SystemModeEnum::kCool, .coolSetpoint = 2400});
+        .onOff = true, .mode = OperationalMode::Cool, .coolSetpoint = 2400});
     Reconciler       rec(state, time);
 
     Transcript t;
@@ -86,13 +80,11 @@ TEST_CASE("Integration: poll/intent/poll/intent/poll converges with one D1 per i
 
     // Step 3: controller flips mode to Heat. Setpoint switches to the
     // heat shadow (LogicalACStateDefaults default 2000).
-    t.record(rec.applyIntent(SetSystemModeIntent{SystemModeEnum::kHeat}));
+    t.record(rec.applyIntent(SetSystemModeIntent{true, OperationalMode::Heat}));
     REQUIRE(t.entries[3].sendCommand.has_value());
     REQUIRE(t.entries[3].sendCommand->operatingMode  == OperatingMode::Heat);
     REQUIRE(t.entries[3].sendCommand->setpointCelsius == 2000);
-    REQUIRE(transcriptContainsAttribute(
-        t, chip::app::Clusters::Thermostat::Id,
-        chip::app::Clusters::Thermostat::Attributes::SystemMode::Id, 3));
+    REQUIRE(transcriptContainsAttribute(t, LogicalAttribute::SystemMode, 3));
     rec.onCommandSent(*t.entries[3].sendCommand);
 
     // Step 4: confirming Heat-mode poll. No D1.
@@ -105,7 +97,7 @@ TEST_CASE("Integration: stale poll arriving after fresh write doesn't kick a re-
 {
     ManualTimeSource time;
     LogicalACState   state(LogicalACStateDefaults{
-        .onOff = true, .mode = SystemModeEnum::kCool, .coolSetpoint = 2400});
+        .onOff = true, .mode = OperationalMode::Cool, .coolSetpoint = 2400});
     Reconciler       rec(state, time);
     rec.applyOperationalObservation(opPoll(true, OperatingMode::Cool, 2400));
 
@@ -129,7 +121,7 @@ TEST_CASE("Integration: external panel change between confirmed write and next p
 {
     ManualTimeSource time;
     LogicalACState   state(LogicalACStateDefaults{
-        .onOff = true, .mode = SystemModeEnum::kCool, .coolSetpoint = 2400});
+        .onOff = true, .mode = OperationalMode::Cool, .coolSetpoint = 2400});
     Reconciler       rec(state, time);
     rec.applyOperationalObservation(opPoll(true, OperatingMode::Cool, 2400));
 
@@ -153,7 +145,7 @@ TEST_CASE("Integration: AtomicRequest commits both setpoints as one D1",
 {
     ManualTimeSource time;
     LogicalACState   state(LogicalACStateDefaults{
-        .onOff = true, .mode = SystemModeEnum::kAuto, .autoSetpoint = 2200,
+        .onOff = true, .mode = OperationalMode::Auto, .autoSetpoint = 2200,
         .heatSetpoint = 2000, .coolSetpoint = 2500});
     Reconciler       rec(state, time);
     AtomicTxn        txn(rec, time);

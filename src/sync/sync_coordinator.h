@@ -1,0 +1,120 @@
+/*
+ * SPDX-License-Identifier: LicenseRef-Apache-2.0
+ *
+ * SyncCoordinator — production singleton wrapping the bridge kernel with a
+ * Zephyr mutex and a ChangePublisher.
+ *
+ * Composition:
+ *   - BridgeKernel: data ownership and policy (LogicalACState, Reconciler,
+ *     AtomicTxn). Lock-free; this class adds the serialisation.
+ *   - ChangePublisher: listener registry + dispatch.
+ *   - AAIInstaller: CHIP AAI registry plumbing (owned outside SyncCoordinator;
+ *     installed/uninstalled in Init/Shutdown).
+ *
+ * Thread model: one internal mutex serialises every public mutation and
+ * every per-attribute Read. Listener callbacks fire outside the mutex so
+ * they can grab the CHIP stack lock or schedule onto the Matter event
+ * loop without deadlocking.
+ */
+#pragma once
+
+#include "bridge_kernel.h"
+#include "change_publisher.h"
+#include "changed_attributes_listener.h"
+#include "logical_ac_state.h"
+#include "logical_attribute.h"
+#include "monotonic_time_source.h"
+#include "operational_mode.h"
+#include "twin_field.h"
+#include "write_intent.h"
+
+#include <app-common/zap-generated/attributes/Accessors.h>
+#include <lib/core/CHIPError.h>
+
+#include <cstdint>
+#include <optional>
+#include <vector>
+#include <zephyr/kernel.h>
+
+namespace sync {
+
+class SyncCoordinator {
+public:
+    static constexpr size_t kMaxListeners = ChangePublisher::kMaxListeners;
+
+    static SyncCoordinator& Instance();
+
+    CHIP_ERROR Init(chip::EndpointId endpoint = 1);
+    void       Shutdown();
+
+    // ─── Mutating entry points (lock-acquiring) ──────────────────────────────
+
+    OperationalChange   ApplyIntent(const WriteIntent& intent);
+    OperationalChange   ApplyOperationalObservation(const S21OperationalObservation& obs);
+    EnvironmentalChange ApplyEnvironmentalObservation(const S21EnvironmentalObservation& obs);
+    void                OnCommandSent(const S21OperationCommand& cmd);
+    void                OnCommandFailed();
+    void                NotifyLinkDown();
+    std::optional<S21OperationCommand> PendingCommand() const;
+
+    using CommandPumpHandler = ChangePublisher::CommandPumpHandler;
+    void SetCommandPumpHandler(CommandPumpHandler handler) { mPublisher.SetCommandPumpHandler(handler); }
+
+    CHIP_ERROR AddChangedAttributesListener(ChangedAttributesListener* listener);
+    void       RemoveChangedAttributesListener(ChangedAttributesListener* listener);
+
+    // ─── Atomic-request transaction ──────────────────────────────────────────
+
+    AtomicTxn::Status BeginAtomic();
+    AtomicTxn::Status AtomicWrite(const WriteIntent& intent);
+    OperationalChange CommitAtomic();
+    AtomicTxn::Status RollbackAtomic();
+
+    // ─── Per-attribute projected reads (lock-acquiring) ──────────────────────
+
+    bool                    ReadOnOff()                       const;
+    OperationalMode         ReadMode()                        const;
+    int16_t                 ReadOccupiedHeatingSetpoint()     const;
+    int16_t                 ReadOccupiedCoolingSetpoint()     const;
+    RunningMode             ReadRunningMode()                 const;
+    std::optional<int16_t>  ReadLocalTemperature()            const;
+    std::optional<int16_t>  ReadOutdoorTemperature()          const;
+    ObservationSource       ReadSetpointSource()              const;
+    FanSpeed                ReadSpeedSetting()                const;
+    bool                    ReadFanIsAuto()                   const;
+    uint8_t                 ReadSpeedCurrent()                const;
+    std::optional<uint16_t> ReadHumidityCentiPercent()        const;
+    bool                    ReadReachable()                   const;
+
+    /// Value-copy of the underlying state, taken under the internal lock.
+    /// For debug surfaces (shell commands, logs) that want the raw
+    /// observed/desired/inFlight triples rather than projected reads.
+    LogicalACState Snapshot() const;
+
+    chip::EndpointId Endpoint() const { return mEndpoint; }
+
+private:
+    SyncCoordinator() = default;
+    ~SyncCoordinator() = default;
+    SyncCoordinator(const SyncCoordinator&)            = delete;
+    SyncCoordinator& operator=(const SyncCoordinator&) = delete;
+
+    class LockGuard {
+    public:
+        explicit LockGuard(k_mutex& m) : mM(m) { k_mutex_lock(&m, K_FOREVER); }
+        ~LockGuard()                            { k_mutex_unlock(&mM); }
+        LockGuard(const LockGuard&)            = delete;
+        LockGuard& operator=(const LockGuard&) = delete;
+    private:
+        k_mutex& mM;
+    };
+
+    chip::EndpointId            mEndpoint{1};
+    bool                        mInitialised{false};
+    mutable k_mutex             mLock;
+    ChangePublisher             mPublisher;
+    MonotonicTimeSource         mTime;
+    std::optional<BridgeKernel> mKernel;
+};
+
+} // namespace sync
