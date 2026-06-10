@@ -5,8 +5,8 @@
  * no locks of its own; this suite exercises the public surface and pins
  * the contract that SyncCoordinator's locking layer relies on.
  *
- * The reconciler/projector/atomic/diff behaviours have their own dedicated
- * suites (test_reconciler.cpp, test_projector.cpp, test_atomic_buffer.cpp).
+ * The reconciler/projector/bundle/diff behaviours have their own dedicated
+ * suites (test_reconciler.cpp, test_projector.cpp, test_intent_bundle.cpp).
  * Tests here focus on the kernel as the composition boundary: every public
  * method routes correctly and returns the expected change type.
  */
@@ -142,36 +142,6 @@ TEST_CASE("notifyLinkDown flips reachable to false, observation restores it",
 
     k.applyOperationalObservation({true, OperatingMode::Cool, 2400, FanMode::Auto, std::nullopt});
     REQUIRE(k.readReachable());
-}
-
-// ─── Atomic surface ──────────────────────────────────────────────────────────
-
-TEST_CASE("begin/atomicWrite/commit routes through AtomicTxn",
-          "[bridge_kernel][atomic]")
-{
-    ManualTimeSource time;
-    BridgeKernel k(time, ReconcilerConfig{});
-    k.applyOperationalObservation({true, OperatingMode::Cool, 2400, FanMode::Auto, std::nullopt});
-
-    REQUIRE(k.begin() == AtomicTxn::Status::Ok);
-    REQUIRE(k.atomicWrite(SetOccupiedCoolingSetpointIntent{2600}) == AtomicTxn::Status::Ok);
-    auto change = k.commit();
-    REQUIRE(change.sendCommand.has_value());
-    REQUIRE(change.sendCommand->setpointCelsius == 2600);
-}
-
-TEST_CASE("rollback discards the buffer", "[bridge_kernel][atomic]")
-{
-    ManualTimeSource time;
-    BridgeKernel k(time, ReconcilerConfig{});
-    k.applyOperationalObservation({true, OperatingMode::Cool, 2400, FanMode::Auto, std::nullopt});
-
-    k.begin();
-    k.atomicWrite(SetOccupiedCoolingSetpointIntent{2600});
-    REQUIRE(k.rollback() == AtomicTxn::Status::Ok);
-
-    // Buffer dropped; pendingCommand stays empty.
-    REQUIRE_FALSE(k.pendingCommand().has_value());
 }
 
 // ─── Read surface ────────────────────────────────────────────────────────────

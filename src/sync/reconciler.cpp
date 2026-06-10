@@ -261,7 +261,7 @@ OperationalChange Reconciler::applyIntent(const WriteIntent& intent)
     return {diffProjections(before, after), pendingCommand()};
 }
 
-OperationalChange Reconciler::applyAtomicBundle(const std::vector<WriteIntent>& intents)
+OperationalChange Reconciler::applyIntentBundle(const std::vector<WriteIntent>& intents)
 {
     const auto before = mProjector.project(mState);
 

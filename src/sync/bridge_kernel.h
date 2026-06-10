@@ -3,7 +3,6 @@
  */
 #pragma once
 
-#include "atomic_buffer.h"
 #include "logical_ac_state.h"
 #include "logical_attribute.h"
 #include "operational_mode.h"
@@ -23,15 +22,13 @@ namespace sync {
 /**
  * BridgeKernel is the data-ownership root of the bridge model. Owns:
  *
- *   - LogicalACState   — the canonical air-conditioner state
- *   - MonotonicTimeSource — the time-source the reconciler reads
- *   - Reconciler       — twin policy + diff computation
- *   - AtomicTxn        — Matter AtomicRequest support
+ *   - LogicalACState — the canonical air-conditioner state
+ *   - Reconciler     — twin policy + diff computation
  *
  * Mutating methods (`applyIntent`, `applyOperationalObservation`, …)
- * return change records but do **not** lock. The caller (today: SyncCoordinator)
- * is responsible for serialising access. Per-attribute reads are similarly
- * lock-free: caller holds whatever lock is needed.
+ * return change records but do **not** lock. The caller (today:
+ * SyncCoordinator) is responsible for serialising access. Per-attribute
+ * reads are similarly lock-free: caller holds whatever lock is needed.
  *
  * No Matter or Zephyr dependencies. CHIP-free.
  */
@@ -41,7 +38,7 @@ public:
     /// production wraps MonotonicTimeSource). Letting BridgeKernel own
     /// the time source would force a Zephyr include and break host tests.
     explicit BridgeKernel(TimeSource& time, const ReconcilerConfig& cfg = {})
-        : mState(), mReconciler(mState, time, cfg), mAtomic(mReconciler, time)
+        : mState(), mReconciler(mState, time, cfg)
     {
     }
 
@@ -59,13 +56,6 @@ public:
     void                onCommandFailed()                                 { mReconciler.onCommandFailed(); }
     void                notifyLinkDown()                                  { mState.reachable.applyObservation(false); }
     std::optional<S21OperationCommand> pendingCommand() const             { return mReconciler.pendingCommand(); }
-
-    // ─── Atomic ──────────────────────────────────────────────────────────────
-
-    AtomicTxn::Status begin()                                  { return mAtomic.begin(); }
-    AtomicTxn::Status atomicWrite(const WriteIntent& intent)   { return mAtomic.write(intent); }
-    OperationalChange commit()                                 { return mAtomic.commit(); }
-    AtomicTxn::Status rollback()                               { return mAtomic.rollback(); }
 
     // ─── Snapshot for debug surfaces ─────────────────────────────────────────
 
@@ -92,7 +82,6 @@ public:
 private:
     LogicalACState mState;
     Reconciler     mReconciler;
-    AtomicTxn      mAtomic;
 };
 
 } // namespace sync

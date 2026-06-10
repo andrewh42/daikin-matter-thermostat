@@ -21,7 +21,6 @@
 
 #include <catch2/catch_test_macros.hpp>
 
-#include "atomic_buffer.h"
 #include "reconciler.h"
 
 #include <atomic>

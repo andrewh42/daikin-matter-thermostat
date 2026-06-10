@@ -3,15 +3,14 @@
  *
  * Phase 7 integration host test
  * -----------------------------
- * Drives a real Reconciler / AtomicTxn through scripted sequences of
- * (observation, intent, observation, intent, …) and asserts the
- * resulting D1 sequence and dirty-attribute set. Pins the end-to-end
- * choreography that the on-device pump and AAI Write/Read paths rely on.
+ * Drives a real Reconciler through scripted sequences of (observation,
+ * intent, observation, intent, …) and asserts the resulting D1 sequence
+ * and dirty-attribute set. Pins the end-to-end choreography that the
+ * on-device pump and AAI Write/Read paths rely on.
  */
 
 #include <catch2/catch_test_macros.hpp>
 
-#include "atomic_buffer.h"
 #include "reconciler.h"
 
 #include <algorithm>
@@ -140,21 +139,24 @@ TEST_CASE("Integration: external panel change between confirmed write and next p
     REQUIRE_FALSE(change2.sendCommand.has_value()); // we accept the panel value
 }
 
-TEST_CASE("Integration: AtomicRequest commits both setpoints as one D1",
-          "[phase7][integration][atomic]")
+TEST_CASE("Integration: bundled setpoint pair commits as one D1",
+          "[phase7][integration][bundle]")
 {
+    // The reconciler primitive that future Matter AtomicRequest wiring
+    // will invoke (see atomic-txn-completion-plan.md). Sequential edits
+    // would walk the auto centre through an intermediate value; the
+    // bundle locks it to midpoint(heat, cool).
     ManualTimeSource time;
     LogicalACState   state(LogicalACStateDefaults{
         .onOff = true, .mode = OperationalMode::Auto, .autoSetpoint = 2200,
         .heatSetpoint = 2000, .coolSetpoint = 2500});
     Reconciler       rec(state, time);
-    AtomicTxn        txn(rec, time);
     rec.applyOperationalObservation(opPoll(true, OperatingMode::Auto, 2200));
 
-    REQUIRE(txn.begin() == AtomicTxn::Status::Ok);
-    txn.write(SetOccupiedHeatingSetpointIntent{2350});
-    txn.write(SetOccupiedCoolingSetpointIntent{2450});
-    auto change = txn.commit();
+    auto change = rec.applyIntentBundle({
+        SetOccupiedHeatingSetpointIntent{2350},
+        SetOccupiedCoolingSetpointIntent{2450},
+    });
 
     REQUIRE(change.sendCommand.has_value());
     REQUIRE(change.sendCommand->operatingMode  == OperatingMode::Auto);

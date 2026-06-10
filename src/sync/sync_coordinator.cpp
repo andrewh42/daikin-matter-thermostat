@@ -148,32 +148,6 @@ std::optional<S21OperationCommand> SyncCoordinator::PendingCommand() const
     return mKernel->pendingCommand();
 }
 
-// ─── Atomic-request transaction ──────────────────────────────────────────────
-
-AtomicTxn::Status SyncCoordinator::BeginAtomic()
-{
-    LockGuard g(mLock);
-    return mKernel->begin();
-}
-
-AtomicTxn::Status SyncCoordinator::AtomicWrite(const WriteIntent& intent)
-{
-    LockGuard g(mLock);
-    return mKernel->atomicWrite(intent);
-}
-
-OperationalChange SyncCoordinator::CommitAtomic()
-{
-    LockGuard g(mLock);
-    return mKernel->commit();
-}
-
-AtomicTxn::Status SyncCoordinator::RollbackAtomic()
-{
-    LockGuard g(mLock);
-    return mKernel->rollback();
-}
-
 // ─── Per-attribute reads ─────────────────────────────────────────────────────
 
 bool SyncCoordinator::ReadOnOff() const

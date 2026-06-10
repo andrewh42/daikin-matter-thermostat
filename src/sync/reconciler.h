@@ -27,9 +27,9 @@ struct ReconcilerConfig {
 };
 
 /// Returned by every mutation path that can produce a setOperation()
-/// command — `applyIntent`, `applyAtomicBundle`, `applyOperationalObservation`,
-/// and `AtomicTxn::commit`. The presence of `sendCommand` reflects that
-/// these paths touch TwinFields that participate in `pendingCommand()`.
+/// command — `applyIntent`, `applyIntentBundle`, and
+/// `applyOperationalObservation`. The presence of `sendCommand` reflects
+/// that these paths touch TwinFields that participate in `pendingCommand()`.
 struct OperationalChange {
     std::vector<LogicalAttribute>      dirtyAttributes;
     std::optional<S21OperationCommand> sendCommand;
@@ -98,12 +98,14 @@ public:
     /// dirty-attribute set + any S21 command that should now be sent.
     OperationalChange applyIntent(const WriteIntent& intent);
 
-    /// Apply a bundle of intents as if they arrived simultaneously. Used
-    /// by AtomicTxn::commit to implement Matter AtomicRequest semantics
-    /// without the centre drift that two non-atomic Auto-band edits would
-    /// cause. Special-cases: in Auto mode, a (heat, cool) pair collapses
-    /// to autoSetpoint = midpoint. Returns the same shape as applyIntent.
-    OperationalChange applyAtomicBundle(const std::vector<WriteIntent>& intents);
+    /// Apply a vector of WriteIntents as if they arrived simultaneously.
+    /// Folds a (heat, cool) setpoint pair in Auto mode into a single
+    /// autoSetpoint = midpoint update — the only Matter-spec scenario in
+    /// which two coupled writes are guaranteed to produce a different
+    /// result than applying them one at a time. Reserved for a future
+    /// Matter AtomicRequest wiring (see atomic-txn-completion-plan.md);
+    /// today the only callers are host tests.
+    OperationalChange applyIntentBundle(const std::vector<WriteIntent>& intents);
 
     /// Apply the operational half of a poll snapshot (onOff / mode /
     /// setpoint / fan / refrigerantValveOpen). Updates state and returns

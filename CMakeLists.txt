@@ -46,7 +46,6 @@ target_sources(app PRIVATE
   src/zcl_callbacks.cpp
   src/sync/projector.cpp
   src/sync/reconciler.cpp
-  src/sync/atomic_buffer.cpp
   src/sync/change_publisher.cpp
   src/sync/sync_coordinator.cpp
   src/sync/aai_thermostat.cpp

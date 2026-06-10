@@ -28,8 +28,8 @@ namespace sync {
  * with a Zephyr mutex and a ChangePublisher.
  *
  * Composition:
- *   - BridgeKernel: data ownership and policy (LogicalACState, Reconciler,
- *     AtomicTxn). Lock-free; this class adds the serialisation.
+ *   - BridgeKernel: data ownership and policy (LogicalACState,
+ *     Reconciler). Lock-free; this class adds the serialisation.
  *   - ChangePublisher: listener registry + dispatch.
  *   - AAIInstaller: CHIP AAI registry plumbing (owned outside
  *     SyncCoordinator; installed/uninstalled in Init/Shutdown).
@@ -63,13 +63,6 @@ public:
 
     CHIP_ERROR AddChangedAttributesListener(ChangedAttributesListener* listener);
     void       RemoveChangedAttributesListener(ChangedAttributesListener* listener);
-
-    // ─── Atomic-request transaction ──────────────────────────────────────────
-
-    AtomicTxn::Status BeginAtomic();
-    AtomicTxn::Status AtomicWrite(const WriteIntent& intent);
-    OperationalChange CommitAtomic();
-    AtomicTxn::Status RollbackAtomic();
 
     // ─── Per-attribute projected reads (lock-acquiring) ──────────────────────
 
