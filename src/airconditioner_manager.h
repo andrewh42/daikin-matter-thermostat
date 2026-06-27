@@ -74,10 +74,10 @@ class AirConditionerManager {
     /// Cadence ratio of operational to environmental polls. Environmental
     /// reads (room/outdoor temperature, humidity) fire on every Nth poll
     /// where N = this constant; operational reads (op + conditional unit
-    /// state) fire every poll. At kS21PollIntervalSec = 10 s and N = 12,
-    /// sensors refresh every ~2 minutes — enough for steady-state HVAC use
+    /// state) fire every poll. At kS21PollIntervalSec = 10 s and N = 6,
+    /// sensors refresh every ~1 minute — enough for steady-state HVAC use
     /// and a meaningful reduction in S21 traffic.
-    static constexpr int kS21EnvironmentalSensorReadTicks = 12;
+    static constexpr int kS21EnvironmentalSensorReadTicks = 6;
 
     /// Number of consecutive operational-poll failures before we flip the
     /// bridge's Reachable view to false. Three at the 10 s poll interval

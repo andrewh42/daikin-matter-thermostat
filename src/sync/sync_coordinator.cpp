@@ -228,6 +228,12 @@ bool SyncCoordinator::ReadReachable() const
     return mKernel->readReachable();
 }
 
+ProjectedClusterState SyncCoordinator::ProjectionSnapshot() const
+{
+    LockGuard g(mLock);
+    return mKernel->projectionSnapshot();
+}
+
 LogicalACState SyncCoordinator::Snapshot() const
 {
     LockGuard g(mLock);

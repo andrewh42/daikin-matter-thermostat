@@ -30,8 +30,13 @@ CHIP_ERROR ThermostatBridgeAttributeAccess::Read(const ConcreteReadAttributePath
         return encoder.Encode(r.ReadOccupiedHeatingSetpoint());
     case TAttr::OccupiedCoolingSetpoint::Id:
         return encoder.Encode(r.ReadOccupiedCoolingSetpoint());
-    case TAttr::SystemMode::Id:
-        return encoder.Encode(sync_aai::toMatterSystemMode(r.ReadOnOff(), r.ReadMode()));
+    case TAttr::SystemMode::Id: {
+        // SystemMode = f(onOff, mode). Take both fields from one coherent
+        // snapshot so an S21 poll landing mid-Read can't pair an old onOff
+        // with a new mode (which would surface as a flickering SystemMode).
+        const auto p = r.ProjectionSnapshot();
+        return encoder.Encode(sync_aai::toMatterSystemMode(p.onOff, p.mode));
+    }
     case TAttr::ThermostatRunningMode::Id:
         return encoder.Encode(sync_aai::toMatterRunningMode(r.ReadRunningMode()));
     case TAttr::SetpointChangeSource::Id:

@@ -30,6 +30,14 @@ namespace sync {
  * SyncCoordinator) is responsible for serialising access. Per-attribute
  * reads are similarly lock-free: caller holds whatever lock is needed.
  *
+ * Two snapshot surfaces:
+ *
+ *   - `snapshot()` returns the raw LogicalACState (observed/desired/inFlight
+ *     triples) for debug surfaces.
+ *   - `projectionSnapshot()` returns the projected cluster view in one
+ *     read, for AAI Reads that need more than one field coherently (the
+ *     Thermostat SystemMode = f(onOff, mode) case being canonical).
+ *
  * No Matter or Zephyr dependencies. CHIP-free.
  */
 class BridgeKernel {
@@ -60,6 +68,14 @@ public:
     // ─── Snapshot for debug surfaces ─────────────────────────────────────────
 
     LogicalACState snapshot() const { return mState; }
+
+    // ─── Coherent projected snapshot for multi-field AAI Reads ───────────────
+
+    /// One-shot full cluster projection. Every field comes from the same
+    /// LogicalACState, so callers that need more than one projected value
+    /// (e.g. Thermostat SystemMode = f(onOff, mode)) see a consistent pair.
+    /// Lock-free like the per-attribute reads: the caller holds the lock.
+    ProjectedClusterState projectionSnapshot() const { return projector().project(mState); }
 
     // ─── Per-attribute reads (lock-free; caller holds external lock) ─────────
 

@@ -175,3 +175,61 @@ TEST_CASE("Snapshot returns a value-copy of LogicalACState",
     REQUIRE(s.mode.observed()  == OperationalMode::Cool);
     REQUIRE(s.coolSetpoint.observed() == 2400);
 }
+
+// ─── projectionSnapshot ──────────────────────────────────────────────────────
+
+namespace {
+
+/// Field-by-field equality on the projection. Kept local to this suite so a
+/// new ProjectedClusterState field forces an explicit update here (the
+/// compiler won't, but the omission shows up as an obvious gap).
+bool projectionsEqual(const ProjectedClusterState& a, const ProjectedClusterState& b)
+{
+    return a.onOff                   == b.onOff
+        && a.mode                    == b.mode
+        && a.occupiedHeatingSetpoint == b.occupiedHeatingSetpoint
+        && a.occupiedCoolingSetpoint == b.occupiedCoolingSetpoint
+        && a.runningMode             == b.runningMode
+        && a.localTemperature        == b.localTemperature
+        && a.outdoorTemperature      == b.outdoorTemperature
+        && a.setpointSource          == b.setpointSource
+        && a.speedSetting            == b.speedSetting
+        && a.fanIsAuto               == b.fanIsAuto
+        && a.speedCurrent            == b.speedCurrent
+        && a.humidityCentiPercent    == b.humidityCentiPercent
+        && a.reachable               == b.reachable;
+}
+
+} // namespace
+
+TEST_CASE("projectionSnapshot is a pure delegate to projector().project(state)",
+          "[bridge_kernel]")
+{
+    ManualTimeSource time;
+    BridgeKernel k(time);
+    k.applyOperationalObservation({true, OperatingMode::Cool, 2400, FanMode::Auto, std::nullopt});
+    k.applyEnvironmentalObservation({2350, 1500, 55});
+    k.applyIntent(SetOccupiedCoolingSetpointIntent{2600});
+
+    // The snapshot must equal what the kernel's own projector would produce
+    // directly off the raw state — proving projectionSnapshot adds no policy.
+    REQUIRE(projectionsEqual(k.projectionSnapshot(),
+                             k.projector().project(k.snapshot())));
+}
+
+TEST_CASE("projectionSnapshot reflects post-intent / post-observation state",
+          "[bridge_kernel]")
+{
+    ManualTimeSource time;
+    BridgeKernel k(time);
+
+    // Default-constructed kernel projects power off.
+    REQUIRE_FALSE(k.projectionSnapshot().onOff);
+
+    // After an on+Cool observation the same one-shot read sees both fields
+    // move together — the coherence this method exists to guarantee.
+    k.applyOperationalObservation({true, OperatingMode::Cool, 2400, FanMode::Auto, std::nullopt});
+    const auto p = k.projectionSnapshot();
+    REQUIRE(p.onOff);
+    REQUIRE(p.mode == OperationalMode::Cool);
+}

@@ -61,6 +61,7 @@ add_executable(sync_tests
     sync/test_reachable.cpp
     sync/test_change_publisher.cpp
     sync/test_bridge_kernel.cpp
+    sync/test_sync_coordinator_snapshot.cpp
     ${SRC_DIR}/sync/projector.cpp
     ${SRC_DIR}/sync/reconciler.cpp
     ${SRC_DIR}/sync/change_publisher.cpp

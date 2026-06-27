@@ -37,7 +37,10 @@ namespace sync {
  * Thread model: one internal mutex serialises every public mutation and
  * every per-attribute Read. Listener callbacks fire outside the mutex so
  * they can grab the CHIP stack lock or schedule onto the Matter event
- * loop without deadlocking.
+ * loop without deadlocking. A per-attribute Read takes the lock once;
+ * callers that need several projected fields coherently should prefer
+ * `ProjectionSnapshot()`, which takes the lock exactly once for the whole
+ * projection rather than once per field.
  */
 class SyncCoordinator {
 public:
@@ -79,6 +82,16 @@ public:
     uint8_t                 ReadSpeedCurrent()                const;
     std::optional<uint16_t> ReadHumidityCentiPercent()        const;
     bool                    ReadReachable()                   const;
+
+    /// Coherent multi-field read: one lock acquisition yields a frozen
+    /// ProjectedClusterState whose fields are all drawn from the same
+    /// LogicalACState. Use this from any AAI Read that needs more than one
+    /// projected value at once (the Thermostat SystemMode = f(onOff, mode)
+    /// case being canonical); the per-attribute Read* methods stay the
+    /// right surface for single-field callers.
+    ///
+    /// Callers must not already hold the internal lock.
+    ProjectedClusterState ProjectionSnapshot() const;
 
     /// Value-copy of the underlying state, taken under the internal lock.
     /// For debug surfaces (shell commands, logs) that want the raw
