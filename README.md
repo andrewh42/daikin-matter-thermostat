@@ -74,6 +74,34 @@ Open this repo in Visual Studio Code and follow these steps:
 
 4. Flash the software.
 
+    For the nRF54L15 boards (XIAO + DK), production builds provision the MCUboot
+    public key into the on-chip KMU. Flash with `--erase` so the key is provisioned;
+    the device will not boot a signed image otherwise:
+    ```sh
+    west flash -d build-xiao --erase
+    ```
+
+
+#### Production signing key
+
+The nRF54L15 builds sign the firmware (and DFU images) with an Ed25519 key and
+store the public verification key in the SoC's hardware Key Management Unit (KMU).
+The private key is **not** committed to this repo (it is gitignored), so you must
+generate it once before building:
+
+```sh
+mkdir -p keys
+python3 /opt/nordic/ncs/v3.3.0/bootloader/mcuboot/scripts/imgtool.py \
+    keygen -t ed25519 -k keys/mcuboot_ed25519_priv.pem
+```
+
+(Run from an nRF Connect SDK terminal so `imgtool`'s Python dependencies are available.)
+
+**Back this key up to secure offline storage immediately.** If it is lost, no
+future DFU image can ever be signed for already-deployed devices. The build then
+picks the key up automatically via `BOOT_SIGNATURE_KEY_FILE` in `Kconfig.sysbuild`.
+Flash production devices with `west flash --erase` to provision the KMU.
+
 
 #### Debug builds
 

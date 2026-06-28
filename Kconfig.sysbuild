@@ -61,6 +61,35 @@ config DFU_MULTI_IMAGE_PACKAGE_NET
 
 endif # SOC_SERIES_NRF53X
 
+#### Production image signing for the nRF54L series (XIAO + DK)
+if SOC_SERIES_NRF54L
+
+choice BOOT_SIGNATURE_TYPE
+	default BOOT_SIGNATURE_TYPE_ED25519
+endchoice
+
+# Store the public verification key in hardware KMU instead of embedding it
+# in the MCUboot image (recommended for nRF54L production). Requires that the
+# device be provisioned with the public key before running the firmware; flash
+# with `west flash --erase` to provision automatically.
+config MCUBOOT_SIGNATURE_USING_KMU
+	default y
+
+# Auto-generate keyfile.json during the build so `west flash --erase` provisions
+# the KMU with the public key derived from BOOT_SIGNATURE_KEY_FILE.
+config MCUBOOT_GENERATE_DEFAULT_KEY_FILE
+	default y
+
+# Production signing key. ${APP_DIR} is expanded by the image-signing CMake
+# script to the application directory (a bare relative path would instead be
+# resolved against the west workspace topdir). This file is gitignored and must
+# be generated locally (see README); a fresh clone will not build until it is
+# supplied.
+config BOOT_SIGNATURE_KEY_FILE
+	default "${APP_DIR}/keys/mcuboot_ed25519_priv.pem"
+
+endif # SOC_SERIES_NRF54L
+
 if BOARD_NRF54L15DK || BOARD_NRF54LM20DK
 
 # Disable checking the external drivers for nRF54L15 and nRF54LM20 DKs.
