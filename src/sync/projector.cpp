@@ -80,23 +80,44 @@ ObservationSource Projector::projectedSetpointSource(const LogicalACState& s) co
     return s.activeSetpoint(s.mode.observed()).attribution();
 }
 
-FanSpeed Projector::projectedSpeedSetting(const LogicalACState& s) const
+std::optional<uint8_t> Projector::projectedSpeedSetting(const LogicalACState& s) const
 {
-    // The cluster reports null while in Auto. We model "Auto" as
-    // nullopt at the twin level, so this is a direct passthrough.
-    return projectedValue(s.fan);
+    // Power-coupled: the fan is off when the unit is off → SpeedSetting 0
+    // (the spec's 0/Off range). Otherwise null ⇔ Auto, else the level value.
+    if (!projectedOnOff(s)) return uint8_t{0};
+    const FanSpeed fan = projectedValue(s.fan);
+    if (!fan.has_value()) return std::nullopt;
+    return static_cast<uint8_t>(*fan);
 }
 
-bool Projector::projectedFanIsAuto(const LogicalACState& s) const
+FanModeCategory Projector::projectedFanMode(const LogicalACState& s) const
 {
-    return !projectedValue(s.fan).has_value();
+    // Off comes from the power axis; the running ranges from the level.
+    if (!projectedOnOff(s)) return FanModeCategory::Off;
+    return fanModeOf(projectedValue(s.fan));
 }
 
 uint8_t Projector::projectedSpeedCurrent(const LogicalACState& s) const
 {
+    // "zero to indicate that the fan is off" (§4.4.6.7) when powered off.
+    if (!projectedOnOff(s)) return 0;
     // Mid-range tachometer indication while in Auto, so legacy controllers
     // showing a 0..N bar don't render an empty bar.
     return static_cast<uint8_t>(projectedValue(s.fan).value_or(FanLevel::MidLow));
+}
+
+std::optional<uint8_t> Projector::projectedPercentSetting(const LogicalACState& s) const
+{
+    // Mirrors SpeedSetting's three states: 0 when off, null ⇔ Auto, else the
+    // remembered exact controller percent (never the lossy floor of the level).
+    if (!projectedOnOff(s)) return uint8_t{0};
+    return s.fanPercentSetting;
+}
+
+uint8_t Projector::projectedPercentCurrent(const LogicalACState& s) const
+{
+    // Pure function of the current speed (0 when off), per §4.4.6.4.
+    return speedLevelToPercent(static_cast<FanLevel>(projectedSpeedCurrent(s)));
 }
 
 std::optional<uint16_t> Projector::projectedHumidityCentiPercent(const LogicalACState& s) const
@@ -125,8 +146,10 @@ ProjectedClusterState Projector::project(const LogicalACState& s) const
         .outdoorTemperature      = projectedOutdoorTemperature(s),
         .setpointSource          = projectedSetpointSource(s),
         .speedSetting            = projectedSpeedSetting(s),
-        .fanIsAuto               = projectedFanIsAuto(s),
+        .fanMode                 = projectedFanMode(s),
         .speedCurrent            = projectedSpeedCurrent(s),
+        .percentSetting          = projectedPercentSetting(s),
+        .percentCurrent          = projectedPercentCurrent(s),
         .humidityCentiPercent    = projectedHumidityCentiPercent(s),
         .reachable               = projectedReachable(s),
     };
@@ -179,11 +202,17 @@ diffProjections(const ProjectedClusterState& before,
     if (before.speedSetting != after.speedSetting)
         out.push_back(LogicalAttribute::SpeedSetting);
 
-    if (before.fanIsAuto != after.fanIsAuto)
+    if (before.fanMode != after.fanMode)
         out.push_back(LogicalAttribute::FanMode);
 
     if (before.speedCurrent != after.speedCurrent)
         out.push_back(LogicalAttribute::SpeedCurrent);
+
+    if (before.percentSetting != after.percentSetting)
+        out.push_back(LogicalAttribute::PercentSetting);
+
+    if (before.percentCurrent != after.percentCurrent)
+        out.push_back(LogicalAttribute::PercentCurrent);
 
     if (before.humidityCentiPercent != after.humidityCentiPercent)
         out.push_back(LogicalAttribute::Humidity);

@@ -1,0 +1,8 @@
+/*
+ * External antenna for XIAO nRF54L15.
+ */
+
+&rfsw_ctl {
+    /delete-property/ regulator-boot-on;
+    regulator-boot-off; // switch to external antenna
+};

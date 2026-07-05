@@ -77,9 +77,11 @@ public:
     std::optional<int16_t>  ReadLocalTemperature()            const;
     std::optional<int16_t>  ReadOutdoorTemperature()          const;
     ObservationSource       ReadSetpointSource()              const;
-    FanSpeed                ReadSpeedSetting()                const;
-    bool                    ReadFanIsAuto()                   const;
+    std::optional<uint8_t>  ReadSpeedSetting()                const;
+    FanModeCategory         ReadFanMode()                     const;
     uint8_t                 ReadSpeedCurrent()                const;
+    std::optional<uint8_t>  ReadPercentSetting()              const;
+    uint8_t                 ReadPercentCurrent()              const;
     std::optional<uint16_t> ReadHumidityCentiPercent()        const;
     bool                    ReadReachable()                   const;
 

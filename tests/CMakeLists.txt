@@ -51,6 +51,8 @@ add_executable(sync_tests
     sync/test_logical_attribute.cpp
     sync/test_operational_mode.cpp
     sync/test_aai_translation.cpp
+    sync/test_fan_mapping.cpp
+    sync/test_fan_control_spec.cpp
     sync/test_twin_field.cpp
     sync/test_logical_ac_state.cpp
     sync/test_reconciler.cpp
@@ -62,6 +64,7 @@ add_executable(sync_tests
     sync/test_change_publisher.cpp
     sync/test_bridge_kernel.cpp
     sync/test_sync_coordinator_snapshot.cpp
+    sync/test_command_router.cpp
     ${SRC_DIR}/sync/projector.cpp
     ${SRC_DIR}/sync/reconciler.cpp
     ${SRC_DIR}/sync/change_publisher.cpp

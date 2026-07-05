@@ -160,7 +160,7 @@ TEST_CASE("Per-attribute reads route to the projector and reflect mutations",
     REQUIRE(*k.readLocalTemperature() == 2350);
     REQUIRE(k.readHumidityCentiPercent().has_value());
     REQUIRE(*k.readHumidityCentiPercent() == 5500);
-    REQUIRE(k.readFanIsAuto() == true);
+    REQUIRE(k.readFanMode() == FanModeCategory::Auto);
 }
 
 TEST_CASE("Snapshot returns a value-copy of LogicalACState",
@@ -194,8 +194,10 @@ bool projectionsEqual(const ProjectedClusterState& a, const ProjectedClusterStat
         && a.outdoorTemperature      == b.outdoorTemperature
         && a.setpointSource          == b.setpointSource
         && a.speedSetting            == b.speedSetting
-        && a.fanIsAuto               == b.fanIsAuto
+        && a.fanMode                 == b.fanMode
         && a.speedCurrent            == b.speedCurrent
+        && a.percentSetting          == b.percentSetting
+        && a.percentCurrent          == b.percentCurrent
         && a.humidityCentiPercent    == b.humidityCentiPercent
         && a.reachable               == b.reachable;
 }

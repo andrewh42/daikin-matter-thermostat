@@ -6,6 +6,7 @@
 #include "logical_ac_state.h"
 
 #include <cstdint>
+#include <optional>
 #include <variant>
 
 namespace sync {
@@ -15,6 +16,13 @@ struct SetSystemModeIntent              { bool power; OperationalMode mode; };
 struct SetOccupiedHeatingSetpointIntent { int16_t value; };
 struct SetOccupiedCoolingSetpointIntent { int16_t value; };
 struct SetSpeedSettingIntent            { FanSpeed value; };
+
+/// Matter FanControl PercentSetting write. `value` is the exact percent
+/// (1..100) the controller wrote; nullopt means a null write, which the
+/// spec (§4.4.6.3) requires to leave the value unchanged (the reconciler
+/// drops it). The 0/Off case is mapped to a power-off intent at the AAI
+/// boundary, so it never arrives here.
+struct SetPercentSettingIntent          { std::optional<uint8_t> value; };
 
 /**
  * WriteIntent is the closed sum-type of cluster-attribute writes the bridge
@@ -34,7 +42,8 @@ using WriteIntent = std::variant<
     SetSystemModeIntent,
     SetOccupiedHeatingSetpointIntent,
     SetOccupiedCoolingSetpointIntent,
-    SetSpeedSettingIntent
+    SetSpeedSettingIntent,
+    SetPercentSettingIntent
 >;
 
 } // namespace sync

@@ -31,6 +31,8 @@ TEST_CASE("LogicalAttribute enumerators are pairwise distinct", "[logical_attrib
         LogicalAttribute::SpeedSetting,
         LogicalAttribute::FanMode,
         LogicalAttribute::SpeedCurrent,
+        LogicalAttribute::PercentSetting,
+        LogicalAttribute::PercentCurrent,
         LogicalAttribute::Humidity,
         LogicalAttribute::Reachable,
     };

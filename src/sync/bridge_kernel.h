@@ -87,9 +87,11 @@ public:
     std::optional<int16_t>  readLocalTemperature()            const { return projector().projectedLocalTemperature(mState); }
     std::optional<int16_t>  readOutdoorTemperature()          const { return projector().projectedOutdoorTemperature(mState); }
     ObservationSource       readSetpointSource()              const { return projector().projectedSetpointSource(mState); }
-    FanSpeed                readSpeedSetting()                const { return projector().projectedSpeedSetting(mState); }
-    bool                    readFanIsAuto()                   const { return projector().projectedFanIsAuto(mState); }
+    std::optional<uint8_t>  readSpeedSetting()                const { return projector().projectedSpeedSetting(mState); }
+    FanModeCategory         readFanMode()                     const { return projector().projectedFanMode(mState); }
     uint8_t                 readSpeedCurrent()                const { return projector().projectedSpeedCurrent(mState); }
+    std::optional<uint8_t>  readPercentSetting()              const { return projector().projectedPercentSetting(mState); }
+    uint8_t                 readPercentCurrent()              const { return projector().projectedPercentCurrent(mState); }
     std::optional<uint16_t> readHumidityCentiPercent()        const { return projector().projectedHumidityCentiPercent(mState); }
     bool                    readReachable()                   const { return projector().projectedReachable(mState); }
 

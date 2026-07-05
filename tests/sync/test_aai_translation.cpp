@@ -18,6 +18,7 @@ using sync::RunningMode;
 using sync::ObservationSource;
 using sync::FanLevel;
 using sync::FanSpeed;
+using sync::FanModeCategory;
 
 using SystemModeEnum            = chip::app::Clusters::Thermostat::SystemModeEnum;
 using ThermostatRunningModeEnum = chip::app::Clusters::Thermostat::ThermostatRunningModeEnum;
@@ -150,41 +151,48 @@ TEST_CASE("toMatterSetpointSource maps ObservationSource to spec values",
 
 // ─── FanMode ─────────────────────────────────────────────────────────────────
 
-TEST_CASE("toMatterFanMode: fanIsAuto bit determines cluster FanMode",
+TEST_CASE("toMatterFanMode: FanModeCategory maps to the cluster FanMode",
           "[aai_translation][fan_mode]")
 {
-    REQUIRE(sync_aai::toMatterFanMode(true)  == FanModeEnum::kAuto);
-    REQUIRE(sync_aai::toMatterFanMode(false) == FanModeEnum::kOn);
+    REQUIRE(sync_aai::toMatterFanMode(FanModeCategory::Off)    == FanModeEnum::kOff);
+    REQUIRE(sync_aai::toMatterFanMode(FanModeCategory::Low)    == FanModeEnum::kLow);
+    REQUIRE(sync_aai::toMatterFanMode(FanModeCategory::Medium) == FanModeEnum::kMedium);
+    REQUIRE(sync_aai::toMatterFanMode(FanModeCategory::High)   == FanModeEnum::kHigh);
+    REQUIRE(sync_aai::toMatterFanMode(FanModeCategory::Auto)   == FanModeEnum::kAuto);
 }
 
-TEST_CASE("fromMatterFanMode: Off/Auto/Smart collapse to nullopt (Auto twin)",
+TEST_CASE("fromMatterFanMode: Off → power off; Auto/Smart → Auto (null speed)",
           "[aai_translation][fan_mode]")
 {
-    auto off   = sync_aai::fromMatterFanMode(FanModeEnum::kOff);
+    REQUIRE(sync_aai::fromMatterFanMode(FanModeEnum::kOff).kind
+            == sync_aai::FanModeWriteKind::PowerOff);
+
     auto autoF = sync_aai::fromMatterFanMode(FanModeEnum::kAuto);
     auto smart = sync_aai::fromMatterFanMode(FanModeEnum::kSmart);
-    REQUIRE(off.has_value());   REQUIRE_FALSE(off->has_value());
-    REQUIRE(autoF.has_value()); REQUIRE_FALSE(autoF->has_value());
-    REQUIRE(smart.has_value()); REQUIRE_FALSE(smart->has_value());
+    REQUIRE(autoF.kind == sync_aai::FanModeWriteKind::SetSpeed);
+    REQUIRE_FALSE(autoF.speed.has_value());
+    REQUIRE(smart.kind == sync_aai::FanModeWriteKind::SetSpeed);
+    REQUIRE_FALSE(smart.speed.has_value());
 }
 
-TEST_CASE("fromMatterFanMode: Low/Medium/High map to fan levels",
+TEST_CASE("fromMatterFanMode: Low/Medium/High → representative levels 2/4/6",
           "[aai_translation][fan_mode]")
 {
     auto low  = sync_aai::fromMatterFanMode(FanModeEnum::kLow);
     auto med  = sync_aai::fromMatterFanMode(FanModeEnum::kMedium);
     auto high = sync_aai::fromMatterFanMode(FanModeEnum::kHigh);
-    REQUIRE(low.has_value());   REQUIRE(*low  == FanSpeed{FanLevel::Low});
-    REQUIRE(med.has_value());   REQUIRE(*med  == FanSpeed{FanLevel::Medium});
-    REQUIRE(high.has_value());  REQUIRE(*high == FanSpeed{FanLevel::High});
+    REQUIRE(low.kind  == sync_aai::FanModeWriteKind::SetSpeed);
+    REQUIRE(low.speed  == FanSpeed{FanLevel::Low});    // 2
+    REQUIRE(med.speed  == FanSpeed{FanLevel::Medium}); // 4
+    REQUIRE(high.speed == FanSpeed{FanLevel::High});   // 6
 }
 
-TEST_CASE("fromMatterFanMode: kOn picks the MidLow level (preserved from legacy mapping)",
+TEST_CASE("fromMatterFanMode: kOn → High (§4.4.6.1.3)",
           "[aai_translation][fan_mode]")
 {
     auto on = sync_aai::fromMatterFanMode(FanModeEnum::kOn);
-    REQUIRE(on.has_value());
-    REQUIRE(*on == FanSpeed{FanLevel::MidLow});
+    REQUIRE(on.kind  == sync_aai::FanModeWriteKind::SetSpeed);
+    REQUIRE(on.speed == FanSpeed{FanLevel::High});
 }
 
 // ─── LogicalAttribute → (cluster, attribute) ─────────────────────────────────
@@ -220,6 +228,10 @@ TEST_CASE("toMatterAddress maps every LogicalAttribute (except Reachable) to a r
             == std::pair{Cl::FanControl::Id, FCAttr::FanMode::Id});
     REQUIRE(sync_aai::toMatterAddress(LogicalAttribute::SpeedCurrent)
             == std::pair{Cl::FanControl::Id, FCAttr::SpeedCurrent::Id});
+    REQUIRE(sync_aai::toMatterAddress(LogicalAttribute::PercentSetting)
+            == std::pair{Cl::FanControl::Id, FCAttr::PercentSetting::Id});
+    REQUIRE(sync_aai::toMatterAddress(LogicalAttribute::PercentCurrent)
+            == std::pair{Cl::FanControl::Id, FCAttr::PercentCurrent::Id});
     REQUIRE(sync_aai::toMatterAddress(LogicalAttribute::Humidity)
             == std::pair{Cl::RelativeHumidityMeasurement::Id, RHAttr::MeasuredValue::Id});
 }

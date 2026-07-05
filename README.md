@@ -74,18 +74,14 @@ Open this repo in Visual Studio Code and follow these steps:
 
 4. Flash the software.
 
-    For the nRF54L15 boards (XIAO + DK), production builds provision the MCUboot
-    public key into the on-chip KMU. Flash with `--erase` so the key is provisioned;
-    the device will not boot a signed image otherwise:
     ```sh
-    west flash -d build-xiao --erase
+    west flash -d build-xiao
     ```
 
 
 #### Production signing key
 
-The nRF54L15 builds sign the firmware (and DFU images) with an Ed25519 key and
-store the public verification key in the SoC's hardware Key Management Unit (KMU).
+The nRF54L15 builds sign the firmware (and DFU images) with your own Ed25519 key.
 The private key is **not** committed to this repo (it is gitignored), so you must
 generate it once before building:
 
@@ -98,9 +94,24 @@ python3 /opt/nordic/ncs/v3.3.0/bootloader/mcuboot/scripts/imgtool.py \
 (Run from an nRF Connect SDK terminal so `imgtool`'s Python dependencies are available.)
 
 **Back this key up to secure offline storage immediately.** If it is lost, no
-future DFU image can ever be signed for already-deployed devices. The build then
-picks the key up automatically via `BOOT_SIGNATURE_KEY_FILE` in `Kconfig.sysbuild`.
-Flash production devices with `west flash --erase` to provision the KMU.
+future DFU image can ever be signed for already-deployed devices. The build picks
+the key up automatically via `BOOT_SIGNATURE_KEY_FILE` in `Kconfig.sysbuild`.
+
+By default the public verification key is **compiled into the MCUboot image**,
+which works with the Seeed XIAO's onboard CMSIS-DAP probe and a plain `west flash`.
+
+To instead store the public key in the SoC's hardware **Key Management Unit (KMU)**
+(more hardened, supports key revocation), build with
+`-DSB_CONFIG_MCUBOOT_SIGNATURE_USING_KMU=y` and flash with a SEGGER J-Link:
+
+```sh
+west flash -d build-xiao --runner jlink --erase
+```
+
+KMU provisioning requires a J-Link (e.g. an nRF54L15 DK used as a debugger, or a
+standalone J-Link); the XIAO's CMSIS-DAP probe cannot provision the KMU. The
+private key and signing are identical to the compiled-in mode, so switching needs
+no new key.
 
 
 #### Debug builds

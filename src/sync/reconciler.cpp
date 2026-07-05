@@ -3,6 +3,8 @@
  */
 #include "reconciler.h"
 
+#include "fan_mapping.h"
+
 namespace sync {
 
 using Source = ObservationSource;
@@ -243,11 +245,39 @@ void Reconciler::apply(const SetOccupiedCoolingSetpointIntent& i)
     }
 }
 
+void Reconciler::powerOnForFanWrite()
+{
+    // Fan currently 0 (= unit powered off): a request for any running fan
+    // setting turns the AC on. `mode` is left at its retained desired(), so
+    // the projector's SystemMode = f(onOff, mode) restores to that mode.
+    if (mState.onOff.observed()) return;
+    if (!intentPassesGuard(mLastDeviceObserved.onOff, /*valueDiffersFromObserved=*/true)) return;
+    mState.onOff.setDesired(true);
+}
+
 void Reconciler::apply(const SetSpeedSettingIntent& i)
 {
     if (!intentPassesGuard(mLastDeviceObserved.fan,
                            i.value != mState.fan.observed())) return;
+    powerOnForFanWrite();
     mState.fan.setDesired(i.value);
+    // A speed/FanMode-originated write re-derives the remembered percent
+    // (Speed Rules: percent = floor(speed/SpeedMax·100)); only a
+    // percent-originated write preserves an exact controller value.
+    mState.fanPercentSetting = i.value.has_value()
+        ? std::optional<uint8_t>{speedLevelToPercent(*i.value)}
+        : std::nullopt;
+}
+
+void Reconciler::apply(const SetPercentSettingIntent& i)
+{
+    if (!i.value.has_value()) return; // null write: SHALL NOT change (§4.4.6.3)
+    const FanSpeed fan{percentToSpeedLevel(*i.value)};
+    if (!intentPassesGuard(mLastDeviceObserved.fan,
+                           fan != mState.fan.observed())) return;
+    powerOnForFanWrite();
+    mState.fan.setDesired(fan);
+    mState.fanPercentSetting = *i.value; // remember the exact controller percent
 }
 
 // ─── Public entry points ──────────────────────────────────────────────────────
@@ -334,9 +364,21 @@ OperationalChange Reconciler::applyOperationalObservation(
         break; // no setpoint-bearing twin
     }
 
-    const auto observedFan = s21FanModeToSpeedSetting(obs.fanMode);
+    const auto observedFan      = s21FanModeToSpeedSetting(obs.fanMode);
+    const auto fanObservedBefore = mState.fan.observed();
     mState.fan.applyObservation(observedFan, Source::Device);
     mLastDeviceObserved.fan = now;
+
+    // Re-derive the remembered PercentSetting only when the device-observed
+    // level genuinely changed (external panel / clamp). A clean confirmation
+    // of our own write leaves attribution at Matter, preserving the exact
+    // controller-written percent.
+    if (mState.fan.observed() != fanObservedBefore &&
+        mState.fan.attribution() == Source::Device) {
+        mState.fanPercentSetting = mState.fan.observed().has_value()
+            ? std::optional<uint8_t>{speedLevelToPercent(*mState.fan.observed())}
+            : std::nullopt;
+    }
 
     mState.refrigerantValveOpen.applyObservation(obs.refrigerantValveOpen);
 

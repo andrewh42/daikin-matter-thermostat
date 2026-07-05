@@ -4,6 +4,7 @@
 #include "aai_fan_control.h"
 
 #include "aai_translation.h"
+#include "fan_mapping.h"
 #include "sync_coordinator.h"
 #include "write_intent.h"
 
@@ -22,17 +23,17 @@ CHIP_ERROR FanControlBridgeAttributeAccess::Read(const ConcreteReadAttributePath
 {
     auto& r = *mStack;
     switch (path.mAttributeId) {
-    case FCAttr::SpeedSetting::Id: {
-        const auto fs = r.ReadSpeedSetting();
-        std::optional<uint8_t> raw =
-            fs.has_value() ? std::optional<uint8_t>{static_cast<uint8_t>(*fs)}
-                           : std::nullopt;
-        return encoder.Encode(sync_aai::wrap(raw));
-    }
+    case FCAttr::SpeedSetting::Id:
+        // nullopt ⇔ Auto (null); 0 ⇔ Off (unit powered off); else level.
+        return encoder.Encode(sync_aai::wrap(r.ReadSpeedSetting()));
     case FCAttr::FanMode::Id:
-        return encoder.Encode(sync_aai::toMatterFanMode(r.ReadFanIsAuto()));
+        return encoder.Encode(sync_aai::toMatterFanMode(r.ReadFanMode()));
     case FCAttr::SpeedCurrent::Id:
         return encoder.Encode(r.ReadSpeedCurrent());
+    case FCAttr::PercentSetting::Id:
+        return encoder.Encode(sync_aai::wrap(r.ReadPercentSetting()));
+    case FCAttr::PercentCurrent::Id:
+        return encoder.Encode(r.ReadPercentCurrent());
     default:
         return CHIP_NO_ERROR; // fallback to cluster server
     }
@@ -45,31 +46,52 @@ CHIP_ERROR FanControlBridgeAttributeAccess::Write(const ConcreteDataAttributePat
     case FCAttr::SpeedSetting::Id: {
         DataModel::Nullable<uint8_t> value;
         ReturnErrorOnFailure(decoder.Decode(value));
-        sync::FanSpeed twin;
-        if (!value.IsNull()) {
-            const uint8_t raw = value.Value();
-            // Reject values outside the cluster's SpeedMax range (1..6
-            // for our ZAP). The cluster server would normally do this
-            // via the SpeedMax constraint, but with External storage we
-            // own the validation.
-            if (raw < 1 || raw > 6) return CHIP_IM_GLOBAL_STATUS(ConstraintError);
-            twin = static_cast<sync::FanLevel>(raw);
+        if (value.IsNull()) return CHIP_NO_ERROR; // null write: SHALL NOT change (§4.4.6.6)
+        const uint8_t raw = value.Value();
+        if (raw == 0) {
+            // 0/Off: the indoor fan can't stop independently of unit power,
+            // so FanControl "Off" maps to powering the AC off.
+            mStack->ApplyIntent(sync::SetOnOffIntent{false});
+            return CHIP_NO_ERROR;
         }
-        mStack->ApplyIntent(sync::SetSpeedSettingIntent{twin});
+        if (raw > sync::kFanSpeedMax) return CHIP_IM_GLOBAL_STATUS(ConstraintError);
+        mStack->ApplyIntent(
+            sync::SetSpeedSettingIntent{sync::FanSpeed{static_cast<sync::FanLevel>(raw)}});
+        return CHIP_NO_ERROR;
+    }
+    case FCAttr::PercentSetting::Id: {
+        DataModel::Nullable<uint8_t> value;
+        ReturnErrorOnFailure(decoder.Decode(value));
+        if (value.IsNull()) return CHIP_NO_ERROR; // null write: SHALL NOT change (§4.4.6.3)
+        const uint8_t pct = value.Value();
+        if (pct == 0) {
+            mStack->ApplyIntent(sync::SetOnOffIntent{false}); // 0/Off → power off
+            return CHIP_NO_ERROR;
+        }
+        if (pct > 100) return CHIP_IM_GLOBAL_STATUS(ConstraintError);
+        mStack->ApplyIntent(sync::SetPercentSettingIntent{pct});
         return CHIP_NO_ERROR;
     }
     case FCAttr::FanMode::Id: {
         FanModeEnum mode;
         ReturnErrorOnFailure(decoder.Decode(mode));
-        auto translated = sync_aai::fromMatterFanMode(mode);
-        if (!translated.has_value()) return CHIP_NO_ERROR; // ignore weird values
-        mStack->ApplyIntent(sync::SetSpeedSettingIntent{*translated});
+        const auto w = sync_aai::fromMatterFanMode(mode);
+        switch (w.kind) {
+        case sync_aai::FanModeWriteKind::PowerOff:
+            mStack->ApplyIntent(sync::SetOnOffIntent{false});
+            return CHIP_NO_ERROR;
+        case sync_aai::FanModeWriteKind::SetSpeed:
+            mStack->ApplyIntent(sync::SetSpeedSettingIntent{w.speed});
+            return CHIP_NO_ERROR;
+        case sync_aai::FanModeWriteKind::Reject:
+            return CHIP_IM_GLOBAL_STATUS(ConstraintError);
+        }
         return CHIP_NO_ERROR;
     }
     case FCAttr::SpeedCurrent::Id:
-        // Device-reported telemetry; controllers shouldn't write it. The
-        // cluster server would normally reject the write; let it. Return
-        // success-without-decoding so the server can do its thing.
+    case FCAttr::PercentCurrent::Id:
+        // Device-reported telemetry; controllers shouldn't write it. Let the
+        // cluster server reject it — return success-without-decoding.
         return CHIP_NO_ERROR;
     default:
         return CHIP_NO_ERROR;

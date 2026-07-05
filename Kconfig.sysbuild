@@ -64,27 +64,33 @@ endif # SOC_SERIES_NRF53X
 #### Production image signing for the nRF54L series (XIAO + DK)
 if SOC_SERIES_NRF54L
 
+# MCUboot image signing. By default the public verification key is compiled into
+# the MCUboot image (MCUBOOT_SIGNATURE_USING_KMU defaults to n in the SDK); this
+# works with the XIAO's onboard CMSIS-DAP probe via a plain `west flash`, with no
+# provisioning step.
+#
+# To instead store the key in the hardware KMU (more hardened, supports key
+# revocation), build with -DSB_CONFIG_MCUBOOT_SIGNATURE_USING_KMU=y (or set it in
+# sysbuild_internal.conf) and flash with a SEGGER J-Link via
+# `west flash --runner jlink --erase`. The XIAO's CMSIS-DAP probe cannot provision
+# the KMU. The private key and the signing operation are identical either way --
+# only the public-key storage location differs -- so switching needs no new key.
+
 choice BOOT_SIGNATURE_TYPE
 	default BOOT_SIGNATURE_TYPE_ED25519
 endchoice
 
-# Store the public verification key in hardware KMU instead of embedding it
-# in the MCUboot image (recommended for nRF54L production). Requires that the
-# device be provisioned with the public key before running the firmware; flash
-# with `west flash --erase` to provision automatically.
-config MCUBOOT_SIGNATURE_USING_KMU
-	default y
-
-# Auto-generate keyfile.json during the build so `west flash --erase` provisions
-# the KMU with the public key derived from BOOT_SIGNATURE_KEY_FILE.
+# Emit keyfile.json (consumed by `west flash --erase` to provision the KMU) only
+# when KMU storage is selected, so MCUBOOT_SIGNATURE_USING_KMU is the single flag
+# that controls the whole mode.
 config MCUBOOT_GENERATE_DEFAULT_KEY_FILE
-	default y
+	default y if MCUBOOT_SIGNATURE_USING_KMU
 
-# Production signing key. ${APP_DIR} is expanded by the image-signing CMake
-# script to the application directory (a bare relative path would instead be
-# resolved against the west workspace topdir). This file is gitignored and must
-# be generated locally (see README); a fresh clone will not build until it is
-# supplied.
+# Production signing key, shared by both storage modes. ${APP_DIR} is expanded by
+# the image-signing CMake script to the application directory (a bare relative
+# path would instead be resolved against the west workspace topdir). This file is
+# gitignored and must be generated locally (see README); a fresh clone will not
+# build until it is supplied.
 config BOOT_SIGNATURE_KEY_FILE
 	default "${APP_DIR}/keys/mcuboot_ed25519_priv.pem"
 

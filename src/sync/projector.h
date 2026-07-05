@@ -3,6 +3,7 @@
  */
 #pragma once
 
+#include "fan_mapping.h"
 #include "logical_ac_state.h"
 #include "logical_attribute.h"
 #include "operational_mode.h"
@@ -33,10 +34,15 @@ struct ProjectedClusterState {
     std::optional<int16_t>        outdoorTemperature;
     ObservationSource             setpointSource;
 
-    // FanControl
-    FanSpeed                      speedSetting;
-    bool                          fanIsAuto;
+    // FanControl. The fan attributes are power-coupled: when the unit is
+    // off the fan is off, so speedSetting/percentSetting read 0, fanMode
+    // reads Off, and the Current pair read 0. speedSetting/percentSetting
+    // are nullable: nullopt ⇔ Auto (null), 0 ⇔ Off, else the running value.
+    std::optional<uint8_t>        speedSetting;
+    FanModeCategory               fanMode;
     uint8_t                       speedCurrent;
+    std::optional<uint8_t>        percentSetting;
+    uint8_t                       percentCurrent;
 
     // RelativeHumidityMeasurement
     std::optional<uint16_t>       humidityCentiPercent;
@@ -97,9 +103,11 @@ public:
     std::optional<int16_t>     projectedLocalTemperature(const LogicalACState&) const;
     std::optional<int16_t>     projectedOutdoorTemperature(const LogicalACState&) const;
     ObservationSource          projectedSetpointSource(const LogicalACState&) const;
-    FanSpeed                   projectedSpeedSetting(const LogicalACState&) const;
-    bool                       projectedFanIsAuto(const LogicalACState&) const;
+    std::optional<uint8_t>     projectedSpeedSetting(const LogicalACState&) const;
+    FanModeCategory            projectedFanMode(const LogicalACState&) const;
     uint8_t                    projectedSpeedCurrent(const LogicalACState&) const;
+    std::optional<uint8_t>     projectedPercentSetting(const LogicalACState&) const;
+    uint8_t                    projectedPercentCurrent(const LogicalACState&) const;
     std::optional<uint16_t>    projectedHumidityCentiPercent(const LogicalACState&) const;
     bool                       projectedReachable(const LogicalACState&) const;
 

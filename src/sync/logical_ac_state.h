@@ -41,6 +41,7 @@ struct LogicalACStateDefaults {
     int16_t          coolSetpoint  = 2500; ///< 0.01 °C
     int16_t          autoSetpoint  = 2200; ///< 0.01 °C — midpoint of Auto band
     FanSpeed         fan           = std::nullopt;
+    std::optional<uint8_t> fanPercentSetting = std::nullopt;
     RunningMode      runningMode   = RunningMode::Off;
     std::optional<int16_t> indoorTemp    = std::nullopt;
     std::optional<int16_t> outdoorTemp   = std::nullopt;
@@ -96,6 +97,7 @@ struct LogicalACState {
           coolSetpoint(d.coolSetpoint),
           autoSetpoint(d.autoSetpoint),
           fan(d.fan),
+          fanPercentSetting(d.fanPercentSetting),
           runningMode(d.runningMode),
           indoorTemp(d.indoorTemp),
           outdoorTemp(d.outdoorTemp),
@@ -111,6 +113,15 @@ struct LogicalACState {
     TwinField<int16_t>         coolSetpoint;
     TwinField<int16_t>         autoSetpoint;
     TwinField<FanSpeed>        fan;
+
+    /// Remembered Matter PercentSetting (1..100), or nullopt ⇔ Auto. The S21
+    /// speaks only discrete fan levels, so percent↔level is lossy; this holds
+    /// the *exact* percent a controller last wrote (or last derived from a
+    /// genuine device speed change) so PercentSetting doesn't visibly snap to
+    /// floor(level/SpeedMax·100) on the next poll. Not a TwinField: the device
+    /// never reports percent, so the reconciler maintains it alongside `fan`.
+    /// The 0/Off value lives on the power axis (onOff), not here.
+    std::optional<uint8_t>     fanPercentSetting;
 
     SensorField<RunningMode>            runningMode;
     SensorField<std::optional<int16_t>> indoorTemp;

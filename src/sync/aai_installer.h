@@ -7,6 +7,7 @@
 #include "aai_humidity.h"
 #include "aai_onoff.h"
 #include "aai_thermostat.h"
+#include "command_router.h"
 
 #include <app-common/zap-generated/attributes/Accessors.h>
 #include <lib/core/CHIPError.h>
@@ -17,13 +18,19 @@ class SyncCoordinator;
 
 /**
  * AAIInstaller owns the four bridge AAI instances (Thermostat, OnOff,
- * FanControl, Humidity) and handles CHIP AAI registry plumbing on
- * Init/Shutdown.
+ * FanControl, Humidity) plus the OnOff/Thermostat command handlers, and
+ * handles CHIP registry plumbing for both on Init/Shutdown.
  *
  * The Thermostat cluster server registers its own wildcard AAI
  * (`gThermostatAttrAccess`) during cluster-server init. The bridge needs
  * the wildcard slot for itself, so Install() locates and unregisters the
  * existing AAI before registering the bridge's own.
+ *
+ * The command handlers exist because OnOff and Thermostat are driven by
+ * commands (On/Off/Toggle, SetpointRaiseLower) whose SDK handlers read/write
+ * the externalised attributes through ember accessors that bypass the AAIs
+ * and fail against external storage. Registering CommandHandlerInterfaces
+ * makes those failing SDK paths unreachable — see command_router.h.
  *
  * Lifetime: AAI instances live as members of the installer, which is in
  * turn owned by SyncCoordinator. CHIP's registry holds raw pointers; as
@@ -59,6 +66,8 @@ private:
     sync_aai::ThermostatBridgeAttributeAccess     mThermostat;
     sync_aai::FanControlBridgeAttributeAccess     mFanControl;
     sync_aai::HumidityBridgeAttributeAccess       mHumidity;
+    sync_aai::OnOffCommandHandler                 mOnOffCmd;
+    sync_aai::ThermostatCommandHandler            mThermostatCmd;
 };
 
 } // namespace sync

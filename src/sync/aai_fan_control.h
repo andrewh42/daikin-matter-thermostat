@@ -12,17 +12,22 @@ namespace sync_aai {
 
 /**
  * FanControlBridgeAttributeAccess is the AAI for FanControl's
- * SpeedSetting / FanMode / SpeedCurrent. The cluster server registers no
- * AAI of its own, so plain insertion works.
+ * SpeedSetting / FanMode / SpeedCurrent / PercentSetting / PercentCurrent.
+ * The cluster server registers no AAI of its own, so plain insertion works.
  *
- * Mapping policy:
- *   - Writes to FanMode (kAuto/kSmart) → speed setting nullopt (Auto)
- *   - Writes to FanMode (kOn) → preserve current speed setting (or set to 3)
- *   - Writes to FanMode (kOff) → bridge translates to OnOff=false via a
- *       separate intent; we ignore here since the OnOff cluster owns that.
- *   - Writes to SpeedSetting (non-null) → speed setting = decoded value
- *   - Writes to SpeedSetting null → speed setting nullopt (Auto)
- *   - Writes to SpeedCurrent → ignored (read-only-ish device telemetry)
+ * Spec-compliant mapping (Matter 1.5 §4.4; SpeedMax=6, FanModeSequence
+ * OffLowMedHighAuto). The S21 fan is level-native (1..6) plus Auto; "Off"
+ * has no fan representation, so the 0/Off range maps to the OnOff power axis:
+ *   - SpeedSetting / PercentSetting null write → no-op (SHALL NOT change).
+ *   - SpeedSetting=0 / PercentSetting=0 / FanMode=Off → power the AC off.
+ *   - SpeedSetting 1..6 → set the fan level; >6 → CONSTRAINT_ERROR.
+ *   - PercentSetting 1..100 → set the fan (exact percent remembered); >100 →
+ *       CONSTRAINT_ERROR.
+ *   - FanMode Low/Medium/High → representative level (2/4/6); On → High;
+ *       Auto/Smart → Auto (null); unsupported → CONSTRAINT_ERROR.
+ *   - A non-off fan write while the AC is off powers it on (handled in the
+ *       reconciler), restoring SystemMode to the retained mode.
+ *   - SpeedCurrent / PercentCurrent → read-only telemetry; writes ignored.
  */
 class FanControlBridgeAttributeAccess : public chip::app::AttributeAccessInterface {
 public:

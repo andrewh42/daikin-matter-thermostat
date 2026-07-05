@@ -162,6 +162,13 @@ private:
     void apply(const SetOccupiedHeatingSetpointIntent&);
     void apply(const SetOccupiedCoolingSetpointIntent&);
     void apply(const SetSpeedSettingIntent&);
+    void apply(const SetPercentSettingIntent&);
+
+    /// A non-off fan write while the unit is powered off turns it on (the
+    /// fan cannot run with the AC off). Mirrors the SetSystemModeIntent
+    /// power handling: sets onOff desired true under the guard, leaving
+    /// `mode` at its retained desired() so SystemMode restores to it.
+    void powerOnForFanWrite();
 
     // Guard-window check for setpoints/onOff/mode/fan. Returns true if the
     // intent should be applied; false to drop it.

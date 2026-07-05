@@ -120,9 +120,11 @@ enum class FanModeEnum : uint8_t {
 };
 
 namespace Attributes {
-    namespace FanMode       { constexpr AttributeId Id = 0x0000; }
-    namespace SpeedSetting  { constexpr AttributeId Id = 0x0004; }
-    namespace SpeedCurrent  { constexpr AttributeId Id = 0x0005; }
+    namespace FanMode        { constexpr AttributeId Id = 0x0000; }
+    namespace PercentSetting { constexpr AttributeId Id = 0x0002; }
+    namespace PercentCurrent { constexpr AttributeId Id = 0x0003; }
+    namespace SpeedSetting   { constexpr AttributeId Id = 0x0004; }
+    namespace SpeedCurrent   { constexpr AttributeId Id = 0x0005; }
 }
 } // namespace FanControl
 

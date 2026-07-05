@@ -53,6 +53,7 @@ target_sources(app PRIVATE
   src/sync/aai_fan_control.cpp
   src/sync/aai_humidity.cpp
   src/sync/aai_installer.cpp
+  src/sync/command_router.cpp
 )
 
 ncs_configure_data_model()

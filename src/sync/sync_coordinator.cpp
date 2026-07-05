@@ -198,22 +198,34 @@ ObservationSource SyncCoordinator::ReadSetpointSource() const
     return mKernel->readSetpointSource();
 }
 
-FanSpeed SyncCoordinator::ReadSpeedSetting() const
+std::optional<uint8_t> SyncCoordinator::ReadSpeedSetting() const
 {
     LockGuard g(mLock);
     return mKernel->readSpeedSetting();
 }
 
-bool SyncCoordinator::ReadFanIsAuto() const
+FanModeCategory SyncCoordinator::ReadFanMode() const
 {
     LockGuard g(mLock);
-    return mKernel->readFanIsAuto();
+    return mKernel->readFanMode();
 }
 
 uint8_t SyncCoordinator::ReadSpeedCurrent() const
 {
     LockGuard g(mLock);
     return mKernel->readSpeedCurrent();
+}
+
+std::optional<uint8_t> SyncCoordinator::ReadPercentSetting() const
+{
+    LockGuard g(mLock);
+    return mKernel->readPercentSetting();
+}
+
+uint8_t SyncCoordinator::ReadPercentCurrent() const
+{
+    LockGuard g(mLock);
+    return mKernel->readPercentCurrent();
 }
 
 std::optional<uint16_t> SyncCoordinator::ReadHumidityCentiPercent() const

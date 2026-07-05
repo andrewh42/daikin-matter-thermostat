@@ -168,29 +168,51 @@ TEST_CASE("RunningMode: tracks projected onOff while a power-off write is in fli
 
 // ─── FanControl projection ───────────────────────────────────────────────────
 
-TEST_CASE("FanControl: SpeedSetting nullopt ↔ fanIsAuto with mid-range SpeedCurrent",
+TEST_CASE("FanControl: Auto → SpeedSetting null, FanMode Auto, mid-range SpeedCurrent",
           "[phase3][projector]")
 {
     Projector p;
     auto s = stateAt(true, OperationalMode::Cool, 2000, 2400, 2200);
     // Default fan is std::nullopt → Auto.
     REQUIRE_FALSE(p.projectedSpeedSetting(s).has_value());
-    REQUIRE(p.projectedFanIsAuto(s) == true);
+    REQUIRE(p.projectedFanMode(s)      == FanModeCategory::Auto);
     REQUIRE(p.projectedSpeedCurrent(s) == 3);
+    REQUIRE_FALSE(p.projectedPercentSetting(s).has_value()); // null in Auto
+    REQUIRE(p.projectedPercentCurrent(s) == 50);             // floor(3/6·100)
 }
 
-TEST_CASE("FanControl: SpeedSetting present → fanIsAuto=false, SpeedCurrent mirrors setting",
+TEST_CASE("FanControl: a running level → SpeedSetting value, FanMode range, Percent derived",
           "[phase3][projector]")
 {
     Projector p;
     LogicalACStateDefaults d;
-    d.fan = FanLevel::MidHigh; // SpeedSetting=5 on the wire
+    d.onOff             = true;
+    d.fan               = FanLevel::MidHigh; // SpeedSetting = 5
+    d.fanPercentSetting = 83;                // floor(5/6·100)
     LogicalACState s(d);
 
-    REQUIRE(p.projectedSpeedSetting(s).has_value());
-    REQUIRE(*p.projectedSpeedSetting(s) == FanLevel::MidHigh);
-    REQUIRE(p.projectedFanIsAuto(s)     == false);
+    REQUIRE(p.projectedSpeedSetting(s)  == std::optional<uint8_t>{5});
+    REQUIRE(p.projectedFanMode(s)       == FanModeCategory::High); // 5-6 → High
     REQUIRE(p.projectedSpeedCurrent(s)  == 5);
+    REQUIRE(p.projectedPercentSetting(s) == std::optional<uint8_t>{83});
+    REQUIRE(p.projectedPercentCurrent(s) == 83);
+}
+
+TEST_CASE("FanControl: powered off → fan attributes all read 0/Off",
+          "[phase3][projector]")
+{
+    Projector p;
+    LogicalACStateDefaults d;
+    d.onOff             = false;
+    d.fan               = FanLevel::Medium; // retained shadow
+    d.fanPercentSetting = 66;
+    LogicalACState s(d);
+
+    REQUIRE(p.projectedSpeedSetting(s)   == std::optional<uint8_t>{0});
+    REQUIRE(p.projectedFanMode(s)        == FanModeCategory::Off);
+    REQUIRE(p.projectedSpeedCurrent(s)   == 0);
+    REQUIRE(p.projectedPercentSetting(s) == std::optional<uint8_t>{0});
+    REQUIRE(p.projectedPercentCurrent(s) == 0);
 }
 
 // ─── LocalTemperature / OutdoorTemperature ───────────────────────────────────
@@ -306,13 +328,17 @@ TEST_CASE("Fan speed nullopt→value flip emits FanMode (Auto bit changes)",
     REQUIRE(contains(attrs, LogicalAttribute::SpeedCurrent));
 }
 
-TEST_CASE("Fan speed level→level change emits SpeedSetting and SpeedCurrent but NOT FanMode",
+TEST_CASE("Fan within-range level change emits Speed*/Percent* but NOT FanMode",
           "[phase3][projector][diff]")
 {
+    // Quiet(1) and Low(2) both map to FanMode Low, so the coarse FanMode is
+    // unchanged while the fine speed/percent values move.
     Projector p;
     LogicalACStateDefaults a;
-    a.onOff = true; a.mode = OperationalMode::Cool; a.fan = FanLevel::Low;
-    LogicalACStateDefaults b = a; b.fan = FanLevel::High;
+    a.onOff = true; a.mode = OperationalMode::Cool;
+    a.fan = FanLevel::Quiet; a.fanPercentSetting = 16;
+    LogicalACStateDefaults b = a;
+    b.fan = FanLevel::Low;   b.fanPercentSetting = 33;
 
     LogicalACState before{a};
     LogicalACState after{b};
@@ -320,5 +346,26 @@ TEST_CASE("Fan speed level→level change emits SpeedSetting and SpeedCurrent bu
     auto attrs = diffProjections(p.project(before), p.project(after));
     REQUIRE(contains(attrs, LogicalAttribute::SpeedSetting));
     REQUIRE(contains(attrs, LogicalAttribute::SpeedCurrent));
-    REQUIRE_FALSE(contains(attrs, LogicalAttribute::FanMode));
+    REQUIRE(contains(attrs, LogicalAttribute::PercentSetting));
+    REQUIRE(contains(attrs, LogicalAttribute::PercentCurrent));
+    REQUIRE_FALSE(contains(attrs, LogicalAttribute::FanMode)); // both in Low range
+}
+
+TEST_CASE("Fan cross-range level change also emits FanMode",
+          "[phase3][projector][diff]")
+{
+    // Low(2) → High(6) crosses Low → High, so the coarse FanMode changes too.
+    Projector p;
+    LogicalACStateDefaults a;
+    a.onOff = true; a.mode = OperationalMode::Cool;
+    a.fan = FanLevel::Low;  a.fanPercentSetting = 33;
+    LogicalACStateDefaults b = a;
+    b.fan = FanLevel::High; b.fanPercentSetting = 100;
+
+    auto attrs = diffProjections(p.project(LogicalACState{a}), p.project(LogicalACState{b}));
+    REQUIRE(contains(attrs, LogicalAttribute::SpeedSetting));
+    REQUIRE(contains(attrs, LogicalAttribute::FanMode));
+    REQUIRE(contains(attrs, LogicalAttribute::SpeedCurrent));
+    REQUIRE(contains(attrs, LogicalAttribute::PercentSetting));
+    REQUIRE(contains(attrs, LogicalAttribute::PercentCurrent));
 }

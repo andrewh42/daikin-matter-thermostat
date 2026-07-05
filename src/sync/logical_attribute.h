@@ -30,6 +30,8 @@ enum class LogicalAttribute : uint8_t {
     SpeedSetting,
     FanMode,
     SpeedCurrent,
+    PercentSetting,
+    PercentCurrent,
     Humidity,
     Reachable,
 };

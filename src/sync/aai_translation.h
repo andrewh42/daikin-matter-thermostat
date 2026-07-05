@@ -3,6 +3,7 @@
  */
 #pragma once
 
+#include "fan_mapping.h"
 #include "logical_ac_state.h"
 #include "logical_attribute.h"
 #include "operational_mode.h"
@@ -97,31 +98,49 @@ toMatterSetpointSource(sync::ObservationSource s)
     }
 }
 
-// ─── FanMode synthesis (from twin's "fan is set" bit) ───────────────────────
+// ─── FanMode ↔ domain mapping ───────────────────────────────────────────────
 
+/// Projects the domain coarse fan mode to the cluster FanModeEnum.
 inline chip::app::Clusters::FanControl::FanModeEnum
-toMatterFanMode(bool fanIsAuto)
+toMatterFanMode(sync::FanModeCategory c)
 {
     using FM = chip::app::Clusters::FanControl::FanModeEnum;
-    return fanIsAuto ? FM::kAuto : FM::kOn;
+    switch (c) {
+    case sync::FanModeCategory::Off:    return FM::kOff;
+    case sync::FanModeCategory::Low:    return FM::kLow;
+    case sync::FanModeCategory::Medium: return FM::kMedium;
+    case sync::FanModeCategory::High:   return FM::kHigh;
+    case sync::FanModeCategory::Auto:   return FM::kAuto;
+    }
+    return FM::kAuto; // unreachable; silences -Wreturn-type
 }
 
-/// Maps a Matter FanMode write to the kernel's FanSpeed. Reserved
-/// enumerators fail closed (return nullopt → AAI returns ConstraintError).
-inline std::optional<sync::FanSpeed>
+/// How the AAI should act on a FanMode write (§4.4.6.1):
+///   - PowerOff: Off → turn the AC off (the fan can't stop independently).
+///   - SetSpeed: set the fan to `speed` (Auto/Smart → nullopt; Low/Medium/
+///     High → representative level; On → High).
+///   - Reject:   value not supported by FanModeSequence → CONSTRAINT_ERROR.
+enum class FanModeWriteKind { PowerOff, SetSpeed, Reject };
+struct FanModeWrite {
+    FanModeWriteKind kind;
+    sync::FanSpeed   speed; ///< meaningful only when kind == SetSpeed
+};
+
+inline FanModeWrite
 fromMatterFanMode(chip::app::Clusters::FanControl::FanModeEnum v)
 {
-    using FM = chip::app::Clusters::FanControl::FanModeEnum;
+    using FM  = chip::app::Clusters::FanControl::FanModeEnum;
+    using Cat = sync::FanModeCategory;
     switch (v) {
-    case FM::kOff:    return sync::FanSpeed{std::nullopt};
-    case FM::kLow:    return sync::FanSpeed{sync::FanLevel::Low};
-    case FM::kMedium: return sync::FanSpeed{sync::FanLevel::Medium};
-    case FM::kHigh:   return sync::FanSpeed{sync::FanLevel::High};
-    case FM::kOn:     return sync::FanSpeed{sync::FanLevel::MidLow};
+    case FM::kOff:    return {FanModeWriteKind::PowerOff, {}};
+    case FM::kLow:    return {FanModeWriteKind::SetSpeed, sync::FanSpeed{sync::representativeSpeed(Cat::Low)}};
+    case FM::kMedium: return {FanModeWriteKind::SetSpeed, sync::FanSpeed{sync::representativeSpeed(Cat::Medium)}};
+    case FM::kHigh:   return {FanModeWriteKind::SetSpeed, sync::FanSpeed{sync::representativeSpeed(Cat::High)}};
+    case FM::kOn:     return {FanModeWriteKind::SetSpeed, sync::FanSpeed{sync::representativeSpeed(Cat::High)}}; // On → High (§4.4.6.1.3)
     case FM::kAuto:
-    case FM::kSmart:  return sync::FanSpeed{std::nullopt};
+    case FM::kSmart:  return {FanModeWriteKind::SetSpeed, sync::FanSpeed{std::nullopt}};                       // AUT supported
     }
-    return std::nullopt;
+    return {FanModeWriteKind::Reject, {}};
 }
 
 // ─── LogicalAttribute → (ClusterId, AttributeId) ────────────────────────────
@@ -161,6 +180,10 @@ toMatterAddress(sync::LogicalAttribute a)
         return {Cl::FanControl::Id, FCAttr::FanMode::Id};
     case sync::LogicalAttribute::SpeedCurrent:
         return {Cl::FanControl::Id, FCAttr::SpeedCurrent::Id};
+    case sync::LogicalAttribute::PercentSetting:
+        return {Cl::FanControl::Id, FCAttr::PercentSetting::Id};
+    case sync::LogicalAttribute::PercentCurrent:
+        return {Cl::FanControl::Id, FCAttr::PercentCurrent::Id};
     case sync::LogicalAttribute::Humidity:
         return {Cl::RelativeHumidityMeasurement::Id, RHAttr::MeasuredValue::Id};
     case sync::LogicalAttribute::Reachable:

@@ -582,10 +582,10 @@
             {ZAP_SIMPLE_DEFAULT(2), 0x00000001, 1, ZAP_TYPE(ENUM8),                                                    \
              ZAP_ATTRIBUTE_MASK(READABLE)}, /* FanModeSequence */                                                      \
             {ZAP_MIN_MAX_DEFAULTS_INDEX(12), 0x00000002, 1, ZAP_TYPE(PERCENT),                                         \
-             ZAP_ATTRIBUTE_MASK(MIN_MAX) | ZAP_ATTRIBUTE_MASK(WRITABLE) | ZAP_ATTRIBUTE_MASK(READABLE) |               \
-                     ZAP_ATTRIBUTE_MASK(NULLABLE)}, /* PercentSetting */                                               \
-            {ZAP_SIMPLE_DEFAULT(0), 0x00000003, 1, ZAP_TYPE(PERCENT),                                                  \
-             ZAP_ATTRIBUTE_MASK(READABLE)}, /* PercentCurrent */                                                       \
+             ZAP_ATTRIBUTE_MASK(MIN_MAX) | ZAP_ATTRIBUTE_MASK(EXTERNAL_STORAGE) | ZAP_ATTRIBUTE_MASK(WRITABLE) |       \
+                     ZAP_ATTRIBUTE_MASK(READABLE) | ZAP_ATTRIBUTE_MASK(NULLABLE)}, /* PercentSetting */                \
+            {ZAP_EMPTY_DEFAULT(), 0x00000003, 1, ZAP_TYPE(PERCENT),                                                    \
+             ZAP_ATTRIBUTE_MASK(EXTERNAL_STORAGE) | ZAP_ATTRIBUTE_MASK(READABLE)}, /* PercentCurrent */                \
             {ZAP_SIMPLE_DEFAULT(6), 0x00000004, 1, ZAP_TYPE(INT8U), ZAP_ATTRIBUTE_MASK(READABLE)}, /* SpeedMax */      \
             {ZAP_MIN_MAX_DEFAULTS_INDEX(13), 0x00000005, 1, ZAP_TYPE(INT8U),                                           \
              ZAP_ATTRIBUTE_MASK(MIN_MAX) | ZAP_ATTRIBUTE_MASK(EXTERNAL_STORAGE) | ZAP_ATTRIBUTE_MASK(WRITABLE) |       \
@@ -1067,7 +1067,7 @@
       .clusterId = 0x00000202, \
       .attributes = ZAP_ATTRIBUTE_INDEX(208), \
       .attributeCount = 11, \
-      .clusterSize = 12, \
+      .clusterSize = 10, \
       .mask = ZAP_CLUSTER_MASK(SERVER) | ZAP_CLUSTER_MASK(ATTRIBUTE_CHANGED_FUNCTION) | ZAP_CLUSTER_MASK(PRE_ATTRIBUTE_CHANGED_FUNCTION), \
       .functions = chipFuncArrayFanControlServer, \
       .acceptedCommandList = nullptr, \
@@ -1098,7 +1098,7 @@
 #define GENERATED_ENDPOINT_TYPES                                                                                       \
     {                                                                                                                  \
             {ZAP_CLUSTER_INDEX(0), 15, 23},                                                                            \
-            {ZAP_CLUSTER_INDEX(15), 9, 65},                                                                            \
+            {ZAP_CLUSTER_INDEX(15), 9, 63},                                                                            \
     }
 
 // Largest attribute size is needed for various buffers
@@ -1111,7 +1111,7 @@ static_assert(ATTRIBUTE_LARGEST <= CHIP_CONFIG_MAX_ATTRIBUTE_STORE_ELEMENT_SIZE,
 #define ATTRIBUTE_SINGLETONS_SIZE (0)
 
 // Total size of attribute storage
-#define ATTRIBUTE_MAX_SIZE (88)
+#define ATTRIBUTE_MAX_SIZE (86)
 
 // Number of fixed endpoints
 #define FIXED_ENDPOINT_COUNT (2)

@@ -6,6 +6,7 @@
 #include "sync_coordinator.h"
 
 #include <app/AttributeAccessInterfaceRegistry.h>
+#include <app/CommandHandlerInterfaceRegistry.h>
 #include <app/clusters/thermostat-server/thermostat-server.h>
 
 namespace sync {
@@ -20,6 +21,8 @@ CHIP_ERROR AAIInstaller::Install(chip::EndpointId endpoint, SyncCoordinator* sta
     mThermostat.Bind(stack);
     mFanControl.Bind(stack);
     mHumidity.Bind(stack);
+    mOnOffCmd.Bind(stack);
+    mThermostatCmd.Bind(stack);
 
     // Replace the SDK's wildcard ThermostatAttrAccess. It's a file-local
     // static inside thermostat-server.cpp (line 80), so we can't reach it
@@ -36,6 +39,13 @@ CHIP_ERROR AAIInstaller::Install(chip::EndpointId endpoint, SyncCoordinator* sta
     ok = AttributeAccessInterfaceRegistry::Instance().Register(&mOnOff)      && ok;
     ok = AttributeAccessInterfaceRegistry::Instance().Register(&mFanControl) && ok;
     ok = AttributeAccessInterfaceRegistry::Instance().Register(&mHumidity)   && ok;
+
+    // Intercept the OnOff/Thermostat commands before the SDK cluster servers'
+    // ember-accessor paths (which fail against the externalised attributes).
+    ok = (CommandHandlerInterfaceRegistry::Instance().RegisterCommandHandler(&mOnOffCmd)
+              == CHIP_NO_ERROR) && ok;
+    ok = (CommandHandlerInterfaceRegistry::Instance().RegisterCommandHandler(&mThermostatCmd)
+              == CHIP_NO_ERROR) && ok;
 
     if (!ok) {
         // Best-effort rollback: unregister anything we managed to register.
@@ -54,6 +64,8 @@ void AAIInstaller::Uninstall()
     AttributeAccessInterfaceRegistry::Instance().Unregister(&mOnOff);
     AttributeAccessInterfaceRegistry::Instance().Unregister(&mFanControl);
     AttributeAccessInterfaceRegistry::Instance().Unregister(&mHumidity);
+    CommandHandlerInterfaceRegistry::Instance().UnregisterCommandHandler(&mOnOffCmd);
+    CommandHandlerInterfaceRegistry::Instance().UnregisterCommandHandler(&mThermostatCmd);
     mInstalled = false;
 }
 
